@@ -92,7 +92,7 @@ function doGet(e) {
     const action = (e && e.parameter && e.parameter.action) || 'ping';
     if (action === 'list') return listWorks_();
     if (action === 'listConfig') return listConfig_();
-    return jsonOut_({ ok: true, message: 'Student Portfolio API ready', time: new Date() });
+    return jsonOut_({ ok: true, message: 'Student Workpiece Storage API ready', time: new Date() });
   } catch (err) {
     return jsonOut_({ ok: false, error: String(err) });
   }
