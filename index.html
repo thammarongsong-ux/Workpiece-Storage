@@ -50,7 +50,7 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
   <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
     <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white grid place-items-center text-2xl shadow">🎒</div>
     <div class="flex-1">
-      <h1 class="font-bold text-lg leading-tight">Workpiece Storage <span class="text-blue-600">• เก็บชิ้นงาน</span></h1>
+      <h1 class="font-bold text-lg leading-tight">Portfolio นักเรียน <span class="text-blue-600">• เก็บชิ้นงาน</span></h1>
       <p class="text-xs text-slate-500">Drive + Google Sheet อัตโนมัติ • สวย ง่าย ครบจบในที่เดียว</p>
     </div>
     <div class="hidden md:flex gap-2 text-xs">
@@ -518,8 +518,9 @@ function renderAll(){ fillSubjects(); renderDash(); renderPadlet(); renderSummar
 function renderDash(){
   const rows = filtered();
   const nImg=rows.filter(r=>r.fileKind==='image').length, nPdf=rows.filter(r=>r.fileKind==='pdf').length, nLink=rows.filter(r=>r.fileKind==='link').length;
-  const today=new Date().toISOString().slice(0,10);
-  const nToday=rows.filter(r=>r.timestamp.startsWith(today)).length;
+  const d=new Date();
+  const tLocal = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const nToday = rows.filter(r=>r.timestamp && r.timestamp.slice(0,10)===tLocal).length;
   document.getElementById('statCards').innerHTML=[
     ['📦','ทั้งหมด',rows.length,'from-blue-500 to-indigo-600'],
     ['🖼️','รูปภาพ',nImg,'from-pink-500 to-rose-500'],
@@ -533,7 +534,7 @@ function renderDash(){
   }).join('');
   document.getElementById('recentList').innerHTML = rows.slice(0,8).map(r=>`
     <div class="flex gap-3 items-center border rounded-xl p-2">
-      ${thumb(r)?`<img src="${esc(thumb(r))}" class="w-14 h-14 rounded-lg object-cover" alt="">`:`<div class="w-14 h-14 rounded-lg bg-slate-100 grid place-items-center text-2xl">${fileIcon(r.fileKind)}</div>`}
+      ${thumb(r)?`<img src="${thumb(r)}" class="w-14 h-14 rounded-lg object-cover" alt="">`:`<div class="w-14 h-14 rounded-lg bg-slate-100 grid place-items-center text-2xl">${fileIcon(r.fileKind)}</div>`}
       <div class="flex-1 min-w-0"><p class="font-medium text-sm truncate">${esc(r.title)}</p><p class="text-xs text-slate-500">${esc(r.fullName)} • ${esc(r.subject)} • ${esc(r.category)}</p></div>
       ${statusBadge(r.status)}
     </div>`).join('') || '<p class="text-sm text-slate-400">ยังไม่มีข้อมูล</p>';
@@ -554,7 +555,7 @@ function renderPadlet(){
   document.getElementById('padCount').textContent=`พบ ${rows.length} ชิ้นงาน`;
   document.getElementById('padWall').innerHTML=rows.map(r=>{
     const t=thumb(r), url=safeUrl(r.fileUrl);
-    const media = t?`<a href="${url}" target="_blank" rel="noopener"><img src="${esc(t)}" loading="lazy" class="preview-img" alt="${esc(r.title)}"></a>`
+    const media = t?`<a href="${url}" target="_blank" rel="noopener"><img src="${t}" loading="lazy" class="preview-img" alt="${esc(r.title)}"></a>`
       : r.fileKind==='pdf'?`<a href="${url}" target="_blank" rel="noopener" class="block bg-gradient-to-br from-violet-100 to-purple-100 rounded-xl p-8 text-center text-4xl">📕<p class="text-xs mt-2 text-purple-700">เปิด PDF</p></a>`
       : `<a href="${url}" target="_blank" rel="noopener" class="block bg-gradient-to-br from-amber-100 to-orange-100 rounded-xl p-8 text-center text-4xl">🔗<p class="text-xs mt-2 text-orange-700 break-all">${esc(r.fileUrl.slice(0,50))}</p></a>`;
     return `<div class="bg-white rounded-2xl border shadow-sm overflow-hidden">
@@ -640,7 +641,7 @@ function renderCheck(){
   document.getElementById('chkList').innerHTML=rows.map(r=>{
     const t=thumb(r);
     return `<div class="bg-white rounded-2xl border p-4 flex flex-col md:flex-row gap-4">
-      <div class="md:w-40 shrink-0">${t?`<img src="${esc(t)}" class="w-full h-28 object-cover rounded-xl" alt="">`:`<div class="w-full h-28 rounded-xl bg-slate-100 grid place-items-center text-4xl">${fileIcon(r.fileKind)}</div>`}</div>
+      <div class="md:w-40 shrink-0">${t?`<img src="${t}" class="w-full h-28 object-cover rounded-xl" alt="">`:`<div class="w-full h-28 rounded-xl bg-slate-100 grid place-items-center text-4xl">${fileIcon(r.fileKind)}</div>`}</div>
       <div class="flex-1">
         <p class="font-semibold">${esc(r.title)} ${statusBadge(r.status)}</p>
         <p class="text-sm text-slate-500">👦 ${esc(r.fullName)}${r.classroom?' ('+esc(r.classroom)+')':''} • 📚 ${esc(r.subject)} • 📂 ${esc(r.category)} • ${esc(r.timestamp)}</p>
