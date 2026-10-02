@@ -1,5 +1,5 @@
 /*************************************************************
- * ระบบเก็บชิ้นงานนักเรียน - Backend (Google Apps Script)
+ * Workpiece Storage - Backend (Google Apps Script)
  * เชื่อม Google Drive + Google Sheet + โหมด Admin
  *
  * Sheet ID  : 1IndHBNkd_PrciT7itRAVDjWuQzL3x0xpOrSZhUDIQ00
@@ -257,8 +257,13 @@ function deleteWork_(d) {
   const row = Number(d.row);
   if (!row || row < 2) return jsonOut_({ ok: false, error: 'row ไม่ถูกต้อง' });
   const sh = getSheet_();
-  const fileId = String(sh.getRange(row, 11).getValue() || '');
-  if (fileId) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) {} }
+  // ลบซ้ำได้อย่างปลอดภัย: ถ้าแถวหายไปแล้วถือว่าสำเร็จ (กันเคสลบสำเร็จแต่เน็ตหลุดตอนตอบกลับ)
+  if (row > sh.getLastRow()) return jsonOut_({ ok: true, alreadyDeleted: true, row: row });
+  const fileId = String(sh.getRange(row, 11).getValue() || '').trim();
+  if (fileId) {
+    try { DriveApp.getFileById(fileId).setTrashed(true); }
+    catch (e) { /* ไฟล์ใน Drive อาจถูกลบไปก่อนแล้ว — ลบแค่แถวใน Sheet ต่อ */ }
+  }
   sh.deleteRow(row);
   return jsonOut_({ ok: true, row: row });
 }
