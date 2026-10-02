@@ -50,7 +50,7 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
   <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
     <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white grid place-items-center text-2xl shadow">🎒</div>
     <div class="flex-1">
-      <h1 class="font-bold text-lg leading-tight">Portfolio นักเรียน <span class="text-blue-600">• เก็บชิ้นงาน</span></h1>
+      <h1 class="font-bold text-lg leading-tight">Workpiece Storage <span class="text-blue-600">• เก็บชิ้นงาน</span></h1>
       <p class="text-xs text-slate-500">Drive + Google Sheet อัตโนมัติ • สวย ง่าย ครบจบในที่เดียว</p>
     </div>
     <div class="hidden md:flex gap-2 text-xs">
@@ -256,7 +256,7 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
 <script>
 let ALL = [];
 let fileKind = 'image';
-let ADMIN = JSON.parse(sessionStorage.getItem('portfolio_admin')||'null'); // {user, pass}
+let ADMIN = JSON.parse(sessionStorage.getItem('Workpiece Storage_admin')||'null'); // {user, pass}
 let SUBJECT_ROWS = []; // [{row, name}] เลขแถวจริงจากชีตวิชา (กันลบ/แก้ผิดแถว)
 // กันอักขระพิเศษในข้อมูลที่นักเรียนกรอก (กันหน้าเว็บพัง + กันสคริปต์แฝง)
 function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
@@ -430,11 +430,11 @@ async function doLogin(){
     const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'login',adminUser:u,adminPass:p})});
     const j=await res.json();
     if(!j.ok) throw new Error('USER หรือ PASS ไม่ถูกต้อง');
-    ADMIN={user:u,pass:p}; sessionStorage.setItem('portfolio_admin',JSON.stringify(ADMIN));
+    ADMIN={user:u,pass:p}; sessionStorage.setItem('Workpiece Storage_admin',JSON.stringify(ADMIN));
     msg.innerHTML='<span class="text-emerald-600">✅ เข้าสู่ระบบสำเร็จ</span>'; refreshAdminUI();
   }catch(e){ msg.innerHTML='<span class="text-red-600">❌ '+e.message+'</span>'; }
 }
-function doLogout(){ ADMIN=null; sessionStorage.removeItem('portfolio_admin'); document.getElementById('adUser').value='';document.getElementById('adPass').value='';refreshAdminUI(); }
+function doLogout(){ ADMIN=null; sessionStorage.removeItem('Workpiece Storage_admin'); document.getElementById('adUser').value='';document.getElementById('adPass').value='';refreshAdminUI(); }
 async function adminPost(payload){
   const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({...payload,...adminAuth()})});
   const j=await res.json(); if(!j.ok) throw new Error(j.error||'บันทึกไม่สำเร็จ'); return j;
@@ -630,7 +630,7 @@ function exportCSV(){
   const q2=v=>`"${String(v??'').replace(/"/g,'""')}"`;
   const lines=[head.join(',')].concat(sumFiltered().map(r=>[r.timestamp,q2(r.fullName),q2(r.classroom),q2(r.subject),q2(r.category),q2(r.title),q2(r.description),r.fileKind,q2(r.fileUrl),q2(r.status),q2(r.comment)].join(',')));
   const blob=new Blob(["\ufeff"+lines.join('\n')],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='portfolio_export.csv';a.click();
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Workpiece Storage_export.csv';a.click();
 }
 
 // ===== CHECK =====
