@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Workpiece Storage | ระบบเก็บชิ้นงาน</title>
+<title>Workpiece Storage | ระบบเก็บชิ้นงาน (แยกปี/เทอม)</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script>
@@ -13,7 +13,9 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrARhkyYB08WG3
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1IndHBNkd_PrciT7itRAVDjWuQzL3x0xpOrSZhUDIQ00/edit';
 const DRIVE_URL = 'https://drive.google.com/drive/folders/1NkxlMHyKXB7Y6c8RmC4B7Bxy1-jYKz8e';
 let SUBJECTS = ['ภาษาไทย','คณิตศาสตร์','วิทยาศาสตร์','ภาษาอังกฤษ','สังคมศึกษา','ศิลปะ','การงานอาชีพ','สุขศึกษา/พละ','คอมพิวเตอร์'];
-let STUDENTS = []; // [{fullName, classroom, row}] โหลดจากชีต "นักเรียน"
+let STUDENTS = [];
+let TERMS = []; // [{year, semester, termId, sheetName}] จาก backend
+let CURRENT_TERM = null; // {year, semester}
 const CATEGORIES = [
   { name:'ใบงาน', icon:'📝', color:'from-amber-400 to-orange-500' },
   { name:'โครงงาน', icon:'🔬', color:'from-emerald-400 to-teal-600' },
@@ -51,17 +53,17 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
     <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white grid place-items-center text-2xl shadow">🎒</div>
     <div class="flex-1">
       <h1 class="font-bold text-lg leading-tight">Workpiece Storage <span class="text-blue-600">• เก็บชิ้นงาน</span></h1>
-      <p class="text-xs text-slate-500">Drive + Google Sheet อัตโนมัติ • สวย ง่าย ครบจบในที่เดียว</p>
+      <p class="text-xs text-slate-500">Drive + Google Sheet อัตโนมัติ • แยกปีการศึกษา/ภาคเรียน <span id="curTermLabel" class="font-semibold text-indigo-600"></span></p>
     </div>
-    <div class="hidden md:flex gap-2 text-xs">
+    <div class="hidden md:flex gap-2 text-xs items-center">
+      <span id="netStatus" class="text-xs text-slate-400"></span>
       <button onclick="loadData()" class="px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700">🔄 รีเฟรช</button>
       <button id="adminBtn" onclick="goAdmin()" class="px-3 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-700">🔐 Admin</button>
     </div>
   </div>
-  <!-- NAV -->
   <nav class="max-w-7xl mx-auto px-4 pb-3 flex gap-2 overflow-x-auto">
     <button data-tab="dashboard" class="navbtn active whitespace-nowrap px-4 py-2 rounded-xl bg-slate-100 text-sm font-medium">🏠 หน้าหลัก</button>
-    <button data-tab="padlet" class="navbtn whitespace-nowrap px-4 py-2 rounded-xl bg-slate-100 text-sm font-medium">📌 ผนังผลงาน Padlet</button>
+    <button data-tab="padlet" class="navbtn whitespace-nowrap px-4 py-2 rounded-xl bg-slate-100 text-sm font-medium">📌 ผลงาน Padlet</button>
     <button data-tab="submit" class="navbtn whitespace-nowrap px-4 py-2 rounded-xl bg-slate-100 text-sm font-medium">📤 ส่งงาน</button>
     <button data-tab="summary" class="navbtn whitespace-nowrap px-4 py-2 rounded-xl bg-slate-100 text-sm font-medium">📈 สรุปชิ้นงาน</button>
     <button data-tab="check" class="navbtn whitespace-nowrap px-4 py-2 rounded-xl bg-slate-100 text-sm font-medium">✅ ตรวจงาน</button>
@@ -76,12 +78,14 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
   <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
     <div>
       <h2 class="text-2xl font-bold">แดชบอร์ดภาพรวม</h2>
-      <p class="text-sm text-slate-500">งานทั้งหมดแยกตามประเภท • กดที่การ์ดเพื่อดูผนังผลงาน</p>
+      <p class="text-sm text-slate-500">งานทั้งหมดแยกตามประเภท • กดที่การ์ดเพื่อดูผลงาน</p>
     </div>
     <div class="flex gap-2 flex-wrap">
-      <select id="dashSubject" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกวิชา</option></select>
+      <select id="dashYear" class="border rounded-xl px-3 py-2 text-sm bg-white" title="ปีการศึกษา"><option value="">ทุกปี</option></select>
+      <select id="dashTerm" class="border rounded-xl px-3 py-2 text-sm bg-white" title="ภาคเรียน"><option value="">ทุกเทอม</option><option value="1">เทอม 1</option><option value="2">เทอม 2</option></select>
       <select id="dashClass" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกห้อง</option></select>
       <select id="dashName" class="border rounded-xl px-3 py-2 text-sm bg-white max-w-[180px]"><option value="">ทุกคน</option></select>
+      <select id="dashSubject" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกวิชา</option></select>
       <input id="dashSearch" placeholder="🔍 ค้นชื่อ / ชื่องาน..." class="border rounded-xl px-3 py-2 text-sm w-44 bg-white">
     </div>
   </div>
@@ -103,15 +107,18 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
 <!-- ============ PADLET ============ -->
 <section id="page-padlet" class="tabpage">
   <div class="flex flex-wrap gap-2 items-center mb-4">
-    <h2 class="text-2xl font-bold flex-1">📌 ผนังผลงาน <span class="text-sm font-normal text-slate-500">สไตล์ Padlet</span></h2>
-    <select id="padSubject" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกวิชา</option></select>
-    <select id="padClass" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกห้อง</option></select>
-    <select id="padName" class="border rounded-xl px-3 py-2 text-sm bg-white max-w-[180px]"><option value="">ทุกคน</option></select>
-    <select id="padCategory" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกประเภท</option></select>
+    <h2 class="text-2xl font-bold flex-1">📌 ผลงาน <span class="text-sm font-normal text-slate-500">สไตล์ Padlet</span></h2>
+    <select id="padYear" class="border rounded-xl px-3 py-2 text-sm bg-white" title="ปีการศึกษา"><option value="">ทุกปี</option></select>
+    <select id="padTerm" class="border rounded-xl px-3 py-2 text-sm bg-white" title="ภาคเรียน"><option value="">ทุกเทอม</option><option value="1">เทอม 1</option><option value="2">เทอม 2</option></select>
+    <select id="padClass" class="border rounded-xl px-3 py-2 text-sm bg-white" title="ชั้น"><option value="">ทุกห้อง</option></select>
+    <select id="padName" class="border rounded-xl px-3 py-2 text-sm bg-white max-w-[180px]" title="ชื่อ-สกุล"><option value="">ทุกคน</option></select>
+    <select id="padSubject" class="border rounded-xl px-3 py-2 text-sm bg-white" title="วิชา"><option value="">ทุกวิชา</option></select>
+    <select id="padCategory" class="border rounded-xl px-3 py-2 text-sm bg-white" title="ประเภท"><option value="">ทุกประเภท</option></select>
     <input id="padSearch" placeholder="🔍 ค้นหา..." class="border rounded-xl px-3 py-2 text-sm w-36 bg-white">
   </div>
   <div id="padCount" class="text-sm text-slate-500 mb-3"></div>
   <div id="padWall" class="masonry"></div>
+  <div class="text-center mt-4"><button id="padMore" onclick="padShowMore()" class="hidden px-5 py-2 rounded-xl bg-slate-900 text-white text-sm">โหลดเพิ่ม ↓</button></div>
 </section>
 
 <!-- ============ SUBMIT ============ -->
@@ -119,7 +126,12 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
   <div class="grid lg:grid-cols-5 gap-4">
     <form id="submitForm" class="lg:col-span-3 bg-white rounded-2xl border shadow-sm p-6 space-y-4">
       <h2 class="text-2xl font-bold">📤 ส่งชิ้นงาน</h2>
-      <p class="text-sm text-slate-500 -mt-2">รองรับ ภาพ / PDF / ลิงก์ (Canva, YouTube, Drive) • ไฟล์เข้า Drive + ลง Sheet อัตโนมัติ</p>
+      <p class="text-sm text-slate-500 -mt-2">รองรับ ภาพ / PDF / ลิงก์ (Canva, YouTube, Drive) • ไฟล์เข้า Drive + ลง Sheet อัตโนมัติ <b>แยกตามปี/เทอม</b></p>
+      <div class="grid md:grid-cols-2 gap-3 bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+        <div><label class="text-sm font-medium">📅 ปีการศึกษา *</label><select id="fYear" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></select></div>
+        <div><label class="text-sm font-medium">📖 ภาคเรียน *</label><select id="fTerm" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="1">ภาคเรียนที่ 1</option><option value="2">ภาคเรียนที่ 2</option></select></div>
+        <p class="md:col-span-2 text-xs text-indigo-700">ไฟล์จะเข้าโฟลเดอร์ <b>ปีการศึกษา xxxx → ภาคเรียนที่ x</b> และลงชีต <b>ผลงาน_xxxx_x</b> อัตโนมัติ</p>
+      </div>
       <div class="grid md:grid-cols-2 gap-3">
         <div><label class="text-sm font-medium">ชื่อ-สกุล * <span class="text-xs text-slate-400">(จาก Sheet)</span></label><select name="fullName" id="fName" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">— เลือกชื่อ —</option></select></div>
         <div><label class="text-sm font-medium">ชั้น / ห้อง * <span class="text-xs text-slate-400">(จาก Sheet)</span></label><select name="classroom" id="fClass" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">— เลือกห้อง —</option></select></div>
@@ -146,16 +158,18 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
       <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-2xl p-6">
         <h3 class="font-bold text-lg">ส่งงานอย่างไร?</h3>
         <ol class="text-sm mt-2 space-y-1.5 opacity-95 list-decimal ml-5">
+          <li>เลือก ปีการศึกษา / ภาคเรียน ให้ตรงเทอมปัจจุบัน</li>
           <li>กรอกชื่อ-สกุล / วิชา / ประเภทให้ครบ</li>
           <li>เลือก ภาพ / PDF / ลิงก์</li>
-          <li>กดส่ง → ไฟล์เข้า Drive โฟลเดอร์วิชาอัตโนมัติ</li>
-          <li>ข้อมูลลง Google Sheet ทันที สถานะ “รอตรวจ”</li>
-          <li>ดูผลงานได้ที่หน้า Padlet</li>
+          <li>กดส่ง → ไฟล์เข้า Drive โฟลเดอร์ปี/เทอม/วิชาอัตโนมัติ</li>
+          <li>ข้อมูลลงชีต <b>ผลงาน_ปี_เทอม</b> ทันที สถานะ “รอตรวจ”</li>
+          <li>ดูผลงานได้ที่หน้า Padlet (กรองตามปี/เทอมได้)</li>
         </ol>
       </div>
       <div class="bg-white rounded-2xl border p-4">
-        <h3 class="font-semibold mb-2">📁 ปลายทางจัดเก็บ</h3>
-        <p class="text-xs text-slate-500">ไฟล์จะแยกโฟลเดอร์ย่อย: วิชา → ประเภทงาน → ไฟล์ (ตั้งชื่อ วันเวลา_ชื่อ_ไฟล์) • ลิงก์ Drive/Sheet เฉพาะ Admin เท่านั้น</p>
+        <h3 class="font-semibold mb-2">📁 ปลายทางจัดเก็บ (แยกเทอม)</h3>
+        <p class="text-xs text-slate-500">Drive: ปีการศึกษา xxxx → ภาคเรียนที่ x → วิชา → ประเภทงาน<br>Sheet: แท็บ ผลงาน_xxxx_x (เช่น ผลงาน_2568_1) • ลิงก์ Drive/Sheet เฉพาะ Admin เท่านั้น</p>
+        <div id="termInfo" class="text-xs mt-2 text-indigo-700"></div>
       </div>
     </div>
   </div>
@@ -175,40 +189,46 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
   <div class="bg-white rounded-2xl border p-4 mb-4">
     <h3 class="font-semibold mb-2">🔍 ตัวกรอง (จาก Sheet)</h3>
     <div class="flex gap-2 flex-wrap">
-      <select id="sumSubject" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกวิชา</option></select>
+      <select id="sumYear" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกปี</option></select>
+      <select id="sumTerm" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกเทอม</option><option value="1">เทอม 1</option><option value="2">เทอม 2</option></select>
       <select id="sumClass" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกห้อง</option></select>
       <select id="sumName" class="border rounded-xl px-3 py-2 text-sm bg-white max-w-[200px]"><option value="">ทุกคน</option></select>
+      <select id="sumSubject" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกวิชา</option></select>
     </div>
   </div>
   <div class="bg-white rounded-2xl border overflow-hidden">
     <div class="p-4 flex gap-2 flex-wrap"><h3 class="font-semibold flex-1">📋 ตารางทั้งหมด</h3><input id="sumSearch" placeholder="🔍 ค้น..." class="border rounded-xl px-3 py-1.5 text-sm w-52"></div>
-    <div class="overflow-auto max-h-[480px]"><table class="w-full text-sm min-w-[760px]">
-      <thead class="bg-slate-50 sticky top-0"><tr class="text-left"><th class="p-3">วันที่</th><th class="p-3">ชื่อ-สกุล</th><th class="p-3">วิชา</th><th class="p-3">ประเภท</th><th class="p-3">ชื่อชิ้นงาน</th><th class="p-3">ไฟล์</th><th class="p-3">สถานะ</th></tr></thead>
+    <div class="overflow-auto max-h-[480px]"><table class="w-full text-sm min-w-[860px]">
+      <thead class="bg-slate-50 sticky top-0"><tr class="text-left"><th class="p-3">ปี/เทอม</th><th class="p-3">วันที่</th><th class="p-3">ชื่อ-สกุล</th><th class="p-3">วิชา</th><th class="p-3">ประเภท</th><th class="p-3">ชื่อชิ้นงาน</th><th class="p-3">ไฟล์</th><th class="p-3">สถานะ</th></tr></thead>
       <tbody id="sumTable"></tbody>
     </table></div>
+    <div class="p-3 text-center border-t"><button id="sumMore" onclick="sumShowMore()" class="hidden px-5 py-2 rounded-xl bg-slate-900 text-white text-sm">แสดงเพิ่ม ↓</button> <span id="sumCount" class="text-xs text-slate-400 ml-2"></span></div>
   </div>
 </section>
 
 <!-- ============ CHECK ============ -->
 <section id="page-check" class="tabpage">
   <div id="chkLock" class="bg-slate-900 text-white rounded-2xl p-4 mb-4 text-sm">🔒 หน้าตรวจงานสำหรับ Admin — <button onclick="goAdmin()" class="underline font-semibold">เข้าสู่ระบบ Admin</button> เพื่อกดผ่าน/แก้ไข/ลบงานได้</div>
-  <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 text-sm">👩‍🏫 <b>หน้าครู:</b> กรองตามประเภทงาน / วิชา / ชื่อ-สกุล แล้วกด ผ่าน / ต้องแก้ไข พร้อมเขียนความเห็น → บันทึกลง Sheet ทันที (ต้องล็อกอิน Admin)</div>
+  <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 text-sm">👩‍🏫 <b>หน้าครู:</b> เลือกปี/เทอมก่อน แล้วกรองตามประเภทงาน / วิชา / ชื่อ-สกุล แล้วกด ผ่าน / ต้องแก้ไข พร้อมเขียนความเห็น → บันทึกลงชีตเทอมนั้นทันที (ต้องล็อกอิน Admin)</div>
   <div class="flex flex-wrap gap-2 mb-4">
-    <select id="chkCategory" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกประเภทงาน</option></select>
-    <select id="chkSubject" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกวิชา</option></select>
+    <select id="chkYear" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกปี</option></select>
+    <select id="chkTerm" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกเทอม</option><option value="1">เทอม 1</option><option value="2">เทอม 2</option></select>
     <select id="chkClass" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกห้อง</option></select>
     <select id="chkName" class="border rounded-xl px-3 py-2 text-sm bg-white max-w-[200px]"><option value="">ทุกคน</option></select>
+    <select id="chkSubject" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกวิชา</option></select>
+    <select id="chkCategory" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกประเภทงาน</option></select>
     <select id="chkStatus" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกสถานะ</option><option>รอตรวจ</option><option>ผ่าน</option><option>ต้องแก้ไข</option></select>
     <input id="chkSearch" placeholder="🔍 ค้นชื่องาน..." class="border rounded-xl px-3 py-2 text-sm flex-1 min-w-[160px] bg-white">
   </div>
   <div id="chkCount" class="text-sm text-slate-500 mb-2"></div>
   <div id="chkList" class="space-y-3"></div>
+  <div class="text-center mt-4"><button id="chkMore" onclick="chkShowMore()" class="hidden px-5 py-2 rounded-xl bg-slate-900 text-white text-sm">โหลดเพิ่ม ↓</button></div>
 </section>
 
 <!-- ============ ADMIN ============ -->
 <section id="page-admin" class="tabpage">
   <h2 class="text-2xl font-bold mb-1">🔐 โหมด Admin</h2>
-  <p class="text-sm text-slate-500 mb-4">จัดการวิชา + รายชื่อนักเรียน (ดึงจาก Sheet) • ดูลิงก์ Sheet/Drive ได้เฉพาะที่นี่</p>
+  <p class="text-sm text-slate-500 mb-4">จัดการวิชา + รายชื่อนักเรียน (ดึงจาก Sheet) • ดูลิงก์ Sheet/Drive ได้เฉพาะที่นี่ • <span id="adminTermInfo"></span></p>
   <div id="loginBox" class="max-w-md bg-white rounded-2xl border p-6 space-y-3">
     <h3 class="font-semibold">เข้าสู่ระบบ</h3>
     <input id="adUser" placeholder="USER" class="w-full border rounded-xl px-3 py-2.5">
@@ -222,6 +242,11 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
       <a id="linkSheet" href="#" target="_blank" class="text-xs px-3 py-2 rounded-xl bg-emerald-600 text-white">📊 เปิด Sheet (Admin)</a>
       <a id="linkDrive" href="#" target="_blank" class="text-xs px-3 py-2 rounded-xl bg-amber-500 text-white">📁 เปิด Drive (Admin)</a>
       <button onclick="doLogout()" class="text-xs px-3 py-2 rounded-xl bg-slate-200">ออกจากระบบ</button>
+    </div>
+    <div class="bg-white rounded-2xl border p-4">
+      <h3 class="font-semibold mb-1">📅 แท็บชีตแยกตามเทอม <span id="termCount" class="text-xs text-slate-400"></span></h3>
+      <p class="text-xs text-slate-400 mb-2">ชีต ผลงาน_ปี_เทอม ถูกสร้างอัตโนมัติเมื่อมีการส่งงานเทอมนั้นครั้งแรก • งานเก่าก่อนแยกเทอมอยู่ในแท็บ “ผลงาน”</p>
+      <div id="termList" class="flex gap-2 flex-wrap"></div>
     </div>
     <div class="grid md:grid-cols-2 gap-4">
       <div class="bg-white rounded-2xl border p-4">
@@ -251,24 +276,71 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
 
 </main>
 
-<footer class="text-center text-xs text-slate-400 py-8">ระบบเก็บผลงานนักเรียน • Drive + Sheet • <span id="ftotal"></span></footer>
+<footer class="text-center text-xs text-slate-400 py-8">ระบบเก็บผลงานนักเรียน • Drive + Sheet แยกปี/เทอม • <span id="ftotal"></span></footer>
 
 <script>
 let ALL = [];
 let fileKind = 'image';
-let ADMIN = JSON.parse(sessionStorage.getItem('Workpiece Storage_admin')||'null'); // {user, pass}
-let SUBJECT_ROWS = []; // [{row, name}] เลขแถวจริงจากชีตวิชา (กันลบ/แก้ผิดแถว)
-// กันอักขระพิเศษในข้อมูลที่นักเรียนกรอก (กันหน้าเว็บพัง + กันสคริปต์แฝง)
+let ADMIN = JSON.parse(sessionStorage.getItem('Workpiece Storage_admin')||'null');
+let SUBJECT_ROWS = [];
 function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-// อนุญาตเฉพาะลิงก์ http(s) เท่านั้น (กันลิงก์ javascript: แฝง)
 function safeUrl(u){ u = String(u || '').trim(); if(!/^https:\/\/(drive\.google\.com\/|docs\.google\.com\/)|^https?:\/\//i.test(u)) return '#'; return u.replace(/"/g,'&quot;'); }
 
-// fill selects (วิชาโหลดจาก Sheet ได้ เติมทีหลัง)
+// ---------- ปีการศึกษา / ภาคเรียน ----------
+function thaiCurrentTerm(){
+  const d = new Date(), m = d.getMonth()+1, gY = d.getFullYear();
+  if(m >= 5 && m <= 10) return { year: String(gY+543), semester: '1' };
+  if(m >= 11) return { year: String(gY+543), semester: '2' };
+  return { year: String(gY+543-1), semester: '2' };
+}
+function termBadge(r){
+  if(r.academicYear && r.semester) return `<span class="badge bg-indigo-100 text-indigo-700">📅 ${esc(r.academicYear)}/${esc(r.semester)}</span>`;
+  return '<span class="badge bg-slate-100 text-slate-500">📦 คลังเดิม</span>';
+}
+function termShort(r){ return (r.academicYear && r.semester) ? r.academicYear+'/'+r.semester : 'คลังเดิม'; }
+function collectYears(){
+  const set = new Set();
+  ALL.forEach(r=>{ if(/^\d{4}$/.test(r.academicYear||'')) set.add(r.academicYear); });
+  TERMS.forEach(t=>set.add(t.year));
+  const cur = CURRENT_TERM || thaiCurrentTerm();
+  set.add(cur.year); set.add(String(Number(cur.year)-1)); set.add(String(Number(cur.year)+1));
+  return [...set].sort();
+}
+function fillTermSelects(){
+  const years = collectYears();
+  const cur = CURRENT_TERM || thaiCurrentTerm();
+  const yearIds = ['dashYear','padYear','sumYear','chkYear'];
+  yearIds.forEach(id=>{
+    const el = document.getElementById(id); if(!el) return;
+    const v = el.value;
+    const first = el.querySelector('option')?.textContent || 'ทุกปี';
+    el.innerHTML = `<option value="">${esc(first)}</option>` + years.map(y=>`<option value="${y}">ปี ${y}</option>`).join('');
+    if(v && years.includes(v)) el.value = v;
+  });
+  // ฟอร์มส่งงาน: default = เทอมปัจจุบัน
+  const fy = document.getElementById('fYear');
+  if(fy){
+    const keep = fy.value;
+    fy.innerHTML = years.map(y=>`<option value="${y}">ปีการศึกษา ${y}</option>`).join('');
+    fy.value = (keep && years.includes(keep)) ? keep : cur.year;
+  }
+  const ft = document.getElementById('fTerm');
+  if(ft && !ft.value) ft.value = cur.semester;
+  const lbl = document.getElementById('curTermLabel');
+  if(lbl) lbl.textContent = `• เทอมปัจจุบัน ${cur.year}/${cur.semester}`;
+  const ti = document.getElementById('termInfo');
+  if(ti) ti.textContent = `เทอมปัจจุบัน: ปีการศึกษา ${cur.year} ภาคเรียนที่ ${cur.semester} — ตรวจว่านักเรียนเลือกตรงก่อนกดส่ง`;
+  const ai = document.getElementById('adminTermInfo');
+  if(ai) ai.textContent = `เทอมปัจจุบัน ${cur.year}/${cur.semester} • มี ${TERMS.length} แท็บเทอม`;
+  const tc = document.getElementById('termCount');
+  if(tc) tc.textContent = `(${TERMS.length} เทอม)`;
+  const tl = document.getElementById('termList');
+  if(tl) tl.innerHTML = TERMS.map(t=>`<span class="badge bg-indigo-100 text-indigo-700">📅 ${esc(t.year)}/${esc(t.semester)} → ${esc(t.sheetName)}</span>`).join('') + '<span class="badge bg-slate-100 text-slate-500">📦 ผลงาน (คลังเดิม)</span>';
+}
+
 function fill(sel, arr, first=''){ const el=document.getElementById(sel); el.innerHTML=`<option value="">${first||el.querySelector('option')?.textContent||''}</option>`; arr.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;el.appendChild(o);}); }
 function uniq(arr){ return [...new Set(arr.map(v=>String(v||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'th')); }
-// ห้องทั้งหมด = จากชีตนักเรียน + จากงานที่ส่งแล้ว (กันกรณีห้องใหม่ยังไม่ลงทะเบียน)
 function classroomList(){ return uniq([...STUDENTS.map(s=>s.classroom), ...ALL.map(r=>r.classroom)]); }
-// ชื่อทั้งหมด = จากชีตนักเรียนเป็นหลัก + เสริมจากงานที่ส่งแล้ว
 function studentNameList(){ const a=STUDENTS.map(s=>s.fullName); const b=ALL.map(r=>r.fullName); return uniq([...a,...b]); }
 function setSel(id, items, first){
   const el=document.getElementById(id); if(!el) return;
@@ -280,14 +352,11 @@ function fillSubjects(){
   fillSheetSelects();
   refillSubjects();
 }
-// วิชาที่เหมาะกับห้องที่เลือก (วิชาที่ไม่กำกับห้อง = ใช้ได้ทุกห้อง)
 function subjectsForClass(cls){
   cls = String(cls || '').trim();
   const rows = SUBJECT_ROWS.length ? SUBJECT_ROWS : SUBJECTS.map(s=>({row:0, name:s, classrooms:[]}));
-  // uniq ท้าย กันชื่อวิชาซ้ำต่างห้อง (เช่น HB เทอม 1 มีทั้ง ม.2/ม.3) โผล่ 2 ครั้งตอนยังไม่เลือกห้อง
   return uniq(rows.filter(o=>!o.classrooms || !o.classrooms.length || !cls || o.classrooms.includes(cls)).map(o=>o.name));
 }
-// สร้างตัวเลือกวิชาตามห้องที่เลือกอยู่ (กันเลือกวิชาผิดห้อง)
 function refillSubjects(){
   const pairs = [
     ['fClass','fSubject','— เลือกวิชา (จาก Sheet) —'],
@@ -301,12 +370,10 @@ function refillSubjects(){
     setSel(s, subjectsForClass(cls), first);
   });
 }
-// ห้องของชื่อนั้น (หาจากชีตนักเรียนก่อน แล้วค่อยจากงานที่ส่งแล้ว)
 function classroomOf(name){
   const f = STUDENTS.find(s=>s.fullName===name) || ALL.find(r=>r.fullName===name);
   return f ? String(f.classroom||'') : '';
 }
-// รายชื่อเฉพาะห้องที่เลือก (เลือกห้องแล้วเห็นแค่ชื่อห้องนั้น) — ห้องว่าง = ทุกชื่อ
 function namesForClass(cls){
   cls = String(cls||'').trim();
   if(!cls) return studentNameList();
@@ -314,12 +381,10 @@ function namesForClass(cls){
   const b = ALL.filter(r=>String(r.classroom||'').trim()===cls).map(r=>r.fullName);
   return uniq([...a,...b]);
 }
-// สร้างตัวเลือกชื่อตามห้องที่เลือกอยู่ (ชื่อนอกห้องจะหายไปทันที)
 function cascadeName(classId, nameId, first){
   const cls = document.getElementById(classId)?.value || '';
   setSel(nameId, namesForClass(cls), first);
 }
-// เลือกชื่อ -> ห้องขยับตามอัตโนมัติ
 function autoClass(nameId, classId){
   const nm = document.getElementById(nameId)?.value || '';
   if(!nm) return;
@@ -329,7 +394,6 @@ function autoClass(nameId, classId){
 function fillSheetSelects(){
   const rooms=classroomList();
   const rl=document.getElementById('roomList'); if(rl) rl.innerHTML=rooms.map(r=>`<option value="${esc(r)}">`).join('');
-  // ฟอร์มส่งงาน (ดึงจาก Sheet) — คงค่าห้องเดิม แล้วกรองชื่อตามห้อง
   setSel('fClass', rooms, '— เลือกห้อง —');
   setSel('dashClass', rooms, 'ทุกห้อง');
   setSel('padClass', rooms, 'ทุกห้อง');
@@ -345,7 +409,6 @@ fillSubjects();
 fill('padCategory', CATEGORIES.map(c=>c.name)); fill('chkCategory', CATEGORIES.map(c=>c.name)); fill('fCategory', CATEGORIES.map(c=>c.name));
 document.getElementById('fCategory').innerHTML='<option value="">— เลือกประเภท —</option>'+CATEGORIES.map(c=>`<option>${c.name}</option>`).join('');
 
-// ฟอร์มส่งงาน: เลือกห้อง -> ชื่อเหลือแค่ห้องนั้น + วิชาเหลือแค่ห้องนั้น / เลือกชื่อ -> ห้องขยับตาม
 document.getElementById('fClass').addEventListener('change', ()=>{
   cascadeName('fClass','fName','— เลือกชื่อ-สกุล —');
   setSel('fSubject', subjectsForClass(document.getElementById('fClass').value), '— เลือกวิชา (จาก Sheet) —');
@@ -355,6 +418,12 @@ document.getElementById('fName').addEventListener('change', ()=>{
   setSel('fSubject', subjectsForClass(document.getElementById('fClass').value), '— เลือกวิชา (จาก Sheet) —');
 });
 function adminAuth(){ return ADMIN ? {adminUser: ADMIN.user, adminPass: ADMIN.pass} : {adminUser:'', adminPass:''}; }
+// ข้อมูลระบุชีตเทอมของแถวนั้น (สำหรับ update/delete ให้โดนชีตถูก)
+function termKeys(r){
+  if(!r) return {};
+  if(r.sheetName) return { sheetName: r.sheetName, academicYear: r.academicYear||'', semester: r.semester||'', termId: r.termId||'' };
+  return { academicYear: r.academicYear||'', semester: r.semester||'' };
+}
 function goAdmin(){ document.querySelector('[data-tab="admin"]').click(); }
 function refreshAdminUI(){
   const on = !!ADMIN;
@@ -366,23 +435,20 @@ function refreshAdminUI(){
     document.getElementById('adminName').textContent = ADMIN.user;
     document.getElementById('linkSheet').href = SHEET_URL;
     document.getElementById('linkDrive').href = DRIVE_URL;
-    renderAdminLists();
+    if(ACTIVE_TAB==='admin') renderAdminLists();
   }
-  renderCheck();
+  if(ACTIVE_TAB==='check') renderCheck();
 }
 
-// tabs
-document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>{document.querySelectorAll('.navbtn').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.tabpage').forEach(p=>p.classList.remove('active'));document.getElementById('page-'+b.dataset.tab).classList.add('active');window.scrollTo({top:0,behavior:'smooth'});});
+document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>{document.querySelectorAll('.navbtn').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.tabpage').forEach(p=>p.classList.remove('active'));document.getElementById('page-'+b.dataset.tab).classList.add('active');ACTIVE_TAB=b.dataset.tab;renderActive();window.scrollTo({top:0,behavior:'smooth'});});
 
-// kind picker
 document.querySelectorAll('.kindbtn').forEach(b=>b.onclick=()=>{document.querySelectorAll('.kindbtn').forEach(x=>{x.classList.remove('border-blue-600','bg-blue-50');x.classList.add('border-slate-200')});b.classList.add('border-blue-600','bg-blue-50');b.classList.remove('border-slate-200');fileKind=b.dataset.kind;
   document.getElementById('fileBox').classList.toggle('hidden', fileKind==='link');
   document.getElementById('linkBox').classList.toggle('hidden', fileKind!=='link');
   document.getElementById('fFile').accept = fileKind==='pdf' ? 'application/pdf' : 'image/*';
-  document.getElementById('fFile').value=''; document.getElementById('previewBox').classList.add('hidden'); // กันไฟล์ค้างผิดชนิด (เช่น เลือกรูปแล้วสลับเป็น PDF)
+  document.getElementById('fFile').value=''; document.getElementById('previewBox').classList.add('hidden');
 });
 
-// preview
 document.getElementById('fFile').onchange = e=>{
   const f=e.target.files[0]; const box=document.getElementById('previewBox'); if(!f){box.classList.add('hidden');return;}
   box.classList.remove('hidden');
@@ -390,10 +456,12 @@ document.getElementById('fFile').onchange = e=>{
   else box.innerHTML=`📕 ${esc(f.name)} (${(f.size/1024).toFixed(0)} KB)`;
 };
 
-function thumb(r){
-  if(r.fileKind==='image' && r.driveFileId) return `https://drive.google.com/thumbnail?id=${r.driveFileId}&sz=w600`;
+function thumb(r, sz){
+  const s = sz || 'w200';
+  if(r.fileKind==='image' && r.driveFileId) return `https://drive.google.com/thumbnail?id=${r.driveFileId}&sz=${s}`;
   return null;
 }
+function thumbLarge(r){ return thumb(r, 'w600'); }
 function statusBadge(s){
   if(s==='ผ่าน') return '<span class="badge bg-emerald-100 text-emerald-700">✅ ผ่าน</span>';
   if(s==='ต้องแก้ไข') return '<span class="badge bg-red-100 text-red-700">✏️ ต้องแก้ไข</span>';
@@ -401,28 +469,78 @@ function statusBadge(s){
 }
 function fileIcon(k){ return k==='pdf'?'📕':k==='link'?'🔗':'🖼️'; }
 
-// ===== LOAD =====
-async function loadData(){
-  setLoading(true);
+// ===== โหลดลื่น: init ครั้งเดียว + ไม่ล้างจอ + ยกเลิกคำขอซ้อน =====
+let ACTIVE_TAB = 'dashboard';
+let PAD_LIMIT = 24, CHK_LIMIT = 20, SUM_LIMIT = 100;
+const PAD_STEP = 24, CHK_STEP = 20, SUM_STEP = 100;
+let BOOT_DONE = false;
+let LOAD_SEQ = 0;
+
+function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms||250); }; }
+function setNet(t){ const el=document.getElementById('netStatus'); if(el) el.textContent=t||''; }
+async function fetchJSON(url, opts, timeoutMs){
+  const c = new AbortController();
+  const to = setTimeout(()=>c.abort(), timeoutMs||25000);
   try{
-    // 1) โหลดผลงานก่อน (จำเป็น) — ถ้าพังถึงแจ้งเตือน
-    const r1 = await fetch(APPS_SCRIPT_URL+'?action=list&t='+Date.now()).then(r=>r.json());
-    if(!r1.ok) throw new Error(r1.error||'โหลดไม่สำเร็จ');
-    ALL = r1.rows||[];
-    // 2) โหลดวิชา/รายชื่อ (best-effort) — พังก็ใช้ค่าเดิม/ค่าดีฟอลต์ ไม่บล็อกทั้งหน้า
-    try{
-      const r2 = await fetch(APPS_SCRIPT_URL+'?action=listConfig&t='+Date.now()).then(r=>r.json());
-      if(r2 && r2.ok){
-        if(r2.subjects?.length) SUBJECTS = r2.subjects;
-        SUBJECT_ROWS = (r2.subjectRows && r2.subjectRows.length) ? r2.subjectRows.map(o=>({row:o.row, name:o.name, classrooms:o.classrooms||[]})) : SUBJECTS.map((s,i)=>({row:i+2,name:s,classrooms:[]}));
-        STUDENTS = r2.students||[];
-      }
-    }catch(e){ console.warn('listConfig failed, using fallback', e); }
-    renderAll(); refreshAdminUI();
-  }catch(err){ alert('โหลดข้อมูลไม่สำเร็จ: '+err.message+'\nตรวจว่า Deploy Web App เป็น Anyone แล้ว'); }
-  setLoading(false);
+    const res = await fetch(url, {...(opts||{}), signal:c.signal});
+    return await res.json();
+  } finally { clearTimeout(to); }
 }
-// ===== ADMIN: login / จัดการวิชา+นักเรียน =====
+function applyBootData(j){
+  ALL = j.rows||[];
+  TERMS = j.terms||TERMS||[];
+  CURRENT_TERM = j.current || CURRENT_TERM || thaiCurrentTerm();
+  if(j.subjects?.length) SUBJECTS = j.subjects;
+  if(j.subjectRows) SUBJECT_ROWS = j.subjectRows.map(o=>({row:o.row, name:o.name, classrooms:o.classrooms||[]}));
+  if(j.students) STUDENTS = j.students||[];
+}
+// โหลดครั้งแรก: ใช้ action=init ครั้งเดียว (เร็ว ~ครึ่งหนึ่ง) ถ้า backend เก่าให้ fallback 2 calls แบบขนาน
+async function loadData(){
+  const mySeq = ++LOAD_SEQ;
+  const first = !BOOT_DONE;
+  if(first) setLoading(true); else setNet('⏳ กำลังซิงก์...');
+  try{
+    let j = null;
+    try { j = await fetchJSON(APPS_SCRIPT_URL+'?action=init&t='+Date.now(), {}, 25000); }
+    catch(e){ j = null; }
+    if(!j || !j.ok || !Array.isArray(j.rows)){
+      // fallback: backend เก่าที่ยังไม่มี action=init (จะตอบ ok แต่ไม่มี rows) — ยิงขนาน ไม่รันทีละตัว
+      const [r1, r2] = await Promise.all([
+        fetchJSON(APPS_SCRIPT_URL+'?action=list&t='+Date.now(), {}, 25000),
+        fetchJSON(APPS_SCRIPT_URL+'?action=listConfig&t='+Date.now(), {}, 25000).catch(()=>null)
+      ]);
+      if(!r1 || !r1.ok) throw new Error((r1&&r1.error)||'โหลดไม่สำเร็จ');
+      j = {...r1, subjects:r2?.subjects, subjectRows:r2?.subjectRows, students:r2?.students};
+      if(r2?.terms?.length) j.terms = r2.terms;
+      if(r2?.current) j.current = r2.current;
+    }
+    if(mySeq !== LOAD_SEQ) return; // มีคำขอใหม่กว่า ทิ้งผลเก่ากันข้อมูลย้อน
+    applyBootData(j);
+    PAD_LIMIT = PAD_STEP; CHK_LIMIT = CHK_STEP; SUM_LIMIT = SUM_STEP; // รีเซ็ตเพจจิเนชันกันข้อมูลเก่าค้าง
+    renderAll();
+    refreshAdminUI();
+    BOOT_DONE = true;
+  }catch(err){
+    if(String(err&&err.name)==='AbortError') return;
+    if(first) alert('โหลดข้อมูลไม่สำเร็จ: '+err.message+'\nตรวจว่า Deploy Web App เป็น Anyone แล้ว');
+    else setNet('โหลดไม่สำเร็จ ลองกดรีเฟรช');
+  }
+  if(first) setLoading(false); else setNet('');
+}
+// ซิงก์เบาๆ หลังส่ง/ลบ: ไม่ล้างจอ ไม่กระพริบ
+async function softRefresh(){
+  setNet('⏳ กำลังซิงก์...');
+  try{
+    let j = null;
+    try { j = await fetchJSON(APPS_SCRIPT_URL+'?action=init&t='+Date.now(), {}, 25000); } catch(e){ j = null; }
+    if(!j || !j.ok || !Array.isArray(j.rows)){
+      // backend เก่า: fallback ไป action=list
+      try { j = await fetchJSON(APPS_SCRIPT_URL+'?action=list&t='+Date.now(), {}, 25000); } catch(e){ j = null; }
+    }
+    if(j && j.ok && Array.isArray(j.rows)){ applyBootData(j); renderAll(); refreshAdminUI(); }
+  }catch(e){ /* เงียบไว้ ใช้ข้อมูลเดิมต่อได้ */ }
+  setNet('');
+}
 async function doLogin(){
   const u=document.getElementById('adUser').value.trim(), p=document.getElementById('adPass').value.trim();
   const msg=document.getElementById('loginMsg');
@@ -434,7 +552,7 @@ async function doLogin(){
     msg.innerHTML='<span class="text-emerald-600">✅ เข้าสู่ระบบสำเร็จ</span>'; refreshAdminUI();
   }catch(e){ msg.innerHTML='<span class="text-red-600">❌ '+e.message+'</span>'; }
 }
-function doLogout(){ ADMIN=null; sessionStorage.removeItem('Workpiece Storage_admin'); document.getElementById('adUser').value='';document.getElementById('adPass').value='';document.getElementById('loginMsg').innerHTML='';refreshAdminUI(); }
+function doLogout(){ ADMIN=null; sessionStorage.removeItem('Workpiece Storage_admin'); document.getElementById('adUser').value='';document.getElementById('adPass').value='';refreshAdminUI(); }
 async function adminPost(payload){
   const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({...payload,...adminAuth()})});
   const j=await res.json(); if(!j.ok) throw new Error(j.error||'บันทึกไม่สำเร็จ'); return j;
@@ -442,10 +560,9 @@ async function adminPost(payload){
 async function addSubject(){
   const v=document.getElementById('newSubject').value.trim(); if(!v) return alert('กรุณาพิมพ์ชื่อวิชาก่อน');
   const rooms=document.getElementById('newSubjectRooms').value.trim();
-  try{ await adminPost({action:'addSubject',subject:v,classrooms:rooms}); document.getElementById('newSubject').value='';document.getElementById('newSubjectRooms').value=''; await loadData(); alert('✅ เพิ่มวิชา "'+v+'" ลง Sheet แล้ว' + (rooms ? ' (เฉพาะห้อง '+rooms+')' : ' (ทุกห้อง)')); }
+  try{ await adminPost({action:'addSubject',subject:v,classrooms:rooms}); document.getElementById('newSubject').value='';document.getElementById('newSubjectRooms').value=''; await softRefresh(); alert('✅ เพิ่มวิชา "'+v+'" ลง Sheet แล้ว' + (rooms ? ' (เฉพาะห้อง '+rooms+')' : ' (ทุกห้อง)')); }
   catch(e){ alert(e.message); }
 }
-// กดแก้ไข -> แถวนั้นกลายเป็นช่องพิมพ์ + ปุ่มบันทึก/ยกเลิก (อ้างด้วย index กันชื่อมี ' หรือ \ ทำปุ่มพัง)
 function editSubjectUIByIndex(i){
   const o = SUBJECT_ROWS[i]; if(!o) return;
   const box = document.getElementById('subj-edit-'+o.row); if(!box) return;
@@ -459,18 +576,18 @@ async function saveSubjectEdit(row){
   if(!v) return alert('กรุณาพิมพ์ชื่อวิชาใหม่');
   try{
     const j = await adminPost({action:'editSubject', row, subject:v, classrooms:rooms, updateWorks:'1'});
-    await loadData();
-    alert('✅ บันทึกวิชาแล้ว' + (j.updatedWorks ? ` (อัปเดตงานเดิม ${j.updatedWorks} ชิ้น)` : ''));
+    await softRefresh();
+    alert('✅ บันทึกวิชาแล้ว' + (j.updatedWorks ? ` (อัปเดตงานเดิม ${j.updatedWorks} ชิ้น ทุกเทอม)` : ''));
   }catch(e){ alert(e.message); }
 }
 async function addStudent(){
   const n=document.getElementById('newStudent').value.trim(), c=document.getElementById('newClass').value.trim();
   if(!n) return alert('กรุณากรอกชื่อ-สกุล');
-  try{ await adminPost({action:'addStudent',fullName:n,classroom:c}); document.getElementById('newStudent').value='';document.getElementById('newClass').value=''; loadData(); }
+  try{ await adminPost({action:'addStudent',fullName:n,classroom:c}); document.getElementById('newStudent').value='';document.getElementById('newClass').value=''; softRefresh(); }
   catch(e){ alert(e.message); }
 }
-async function delSubject(row){ if(!confirm('ลบวิชานี้? (งานเดิมที่ใช้วิชานี้จะไม่ถูกลบ)')) return; try{ await adminPost({action:'deleteSubject',row}); loadData(); }catch(e){ alert(e.message); } }
-async function delStudent(row){ if(!confirm('ลบชื่อนักเรียนนี้? (งานเดิมที่ส่งแล้วจะไม่ถูกลบ)')) return; try{ await adminPost({action:'deleteStudent',row}); loadData(); }catch(e){ alert(e.message); } }
+async function delSubject(row){ if(!confirm('ลบวิชานี้? (งานเดิมที่ใช้วิชานี้จะไม่ถูกลบ)')) return; try{ await adminPost({action:'deleteSubject',row}); softRefresh(); }catch(e){ alert(e.message); } }
+async function delStudent(row){ if(!confirm('ลบชื่อนักเรียนนี้? (งานเดิมที่ส่งแล้วจะไม่ถูกลบ)')) return; try{ await adminPost({action:'deleteStudent',row}); softRefresh(); }catch(e){ alert(e.message); } }
 function editStudentUIByRow(row){
   const o = STUDENTS.find(s=>s.row===row); if(!o) return;
   const box = document.getElementById('stud-edit-'+row); if(!box) return;
@@ -483,13 +600,12 @@ async function saveStudentEdit(row){
   if(!v) return alert('กรุณากรอกชื่อ-สกุล');
   try{
     const j = await adminPost({action:'editStudent', row, fullName:v, classroom:c, updateWorks:'1'});
-    await loadData();
-    alert('✅ บันทึกชื่อนักเรียนแล้ว' + (j.updatedWorks ? ` (อัปเดตงานเดิม ${j.updatedWorks} ชิ้น)` : ''));
+    await softRefresh();
+    alert('✅ บันทึกชื่อนักเรียนแล้ว' + (j.updatedWorks ? ` (อัปเดตงานเดิม ${j.updatedWorks} ชิ้น ทุกเทอม)` : ''));
   }catch(e){ alert(e.message); }
 }
 function renderAdminLists(){
   document.getElementById('subjCount').textContent = `(${SUBJECTS.length} วิชา)`;
-  // หา row ของวิชา: นับตามลำดับในชีต (header row 1 + index)
   document.getElementById('subjectList').innerHTML = SUBJECT_ROWS.map((o,i)=>{
     const rooms = o.classrooms || [];
     const tag = rooms.length ? rooms.map(r=>`<span class="badge bg-blue-100 text-blue-700">${esc(r)}</span>`).join(' ') : '<span class="badge bg-slate-100 text-slate-500">ทุกห้อง</span>';
@@ -497,22 +613,40 @@ function renderAdminLists(){
   }).join('');
   document.getElementById('studCount').textContent = `(${STUDENTS.length} คน)`;
   document.getElementById('studentAdminList').innerHTML = STUDENTS.map(s=>`<div class="border rounded-xl px-3 py-1.5 text-sm"><div class="flex justify-between items-center gap-2"><span>👦 ${esc(s.fullName)} <span class="text-slate-400">${esc(s.classroom||'')}</span></span><span class="flex gap-2"><button onclick="editStudentUIByRow(${s.row})" class="text-blue-600 text-xs">✏️ แก้ไข</button><button onclick="delStudent(${s.row})" class="text-red-500 text-xs">ลบ</button></span></div><div id="stud-edit-${s.row}" class="mt-1"></div></div>`).join('')||'<p class="text-xs text-slate-400">ยังไม่มีรายชื่อ — เพิ่มด้านบนได้เลย</p>';
+  fillTermSelects();
 }
 function setLoading(v){
-  ['recentList','padWall','sumTable','chkList'].forEach(id=>{const el=document.getElementById(id); if(v) el.innerHTML='<p class="text-slate-400 text-sm p-4">⏳ กำลังโหลด...</p>';});
+  if(!v) return;
+  // ครั้งแรกเท่านั้นถึงล้างจอ (กันกระพริบเวลาซิงก์เบา)
+  const map = {dashboard:'recentList', padlet:'padWall', summary:'sumTable', check:'chkList'};
+  const id = map[ACTIVE_TAB]||'recentList';
+  const el = document.getElementById(id);
+  if(el) el.innerHTML='<p class="text-slate-400 text-sm p-4">⏳ กำลังโหลด...</p>';
 }
 
-// ===== FILTERS (ทุกตัวเลือกดึงจาก Sheet) =====
+// ===== FILTERS (รวมปี/เทอม) =====
 function val(id){ return document.getElementById(id)?.value || ''; }
 function matchSheet(r, subj, cls, name){
   return (!subj || r.subject===subj) && (!cls || r.classroom===cls) && (!name || r.fullName===name);
 }
+function matchTerm(r, year, sem){
+  return (!year || String(r.academicYear||'')===String(year)) && (!sem || String(r.semester||'')===String(sem));
+}
 function filtered(src){
+  const y=val('dashYear'), t=val('dashTerm');
   const s=val('dashSubject'), c=val('dashClass'), n=val('dashName'), q=document.getElementById('dashSearch').value.trim().toLowerCase();
-  return ALL.filter(r=>matchSheet(r,s,c,n)&&(!q||(r.fullName+r.title+r.category).toLowerCase().includes(q)));
+  return ALL.filter(r=>matchTerm(r,y,t)&&matchSheet(r,s,c,n)&&(!q||(r.fullName+r.title+r.category).toLowerCase().includes(q)));
 }
 
-function renderAll(){ fillSubjects(); renderDash(); renderPadlet(); renderSummary(); renderCheck(); document.getElementById('ftotal').textContent='ทั้งหมด '+ALL.length+' ชิ้น'; }
+function renderActive(){
+  if(ACTIVE_TAB==='dashboard') renderDash();
+  else if(ACTIVE_TAB==='padlet') renderPadlet();
+  else if(ACTIVE_TAB==='summary') renderSummary();
+  else if(ACTIVE_TAB==='check') renderCheck();
+  else if(ACTIVE_TAB==='admin' && ADMIN) renderAdminLists();
+  document.getElementById('ftotal').textContent='ทั้งหมด '+ALL.length+' ชิ้น ('+TERMS.length+' เทอม + คลังเดิม)';
+}
+function renderAll(){ fillTermSelects(); fillSubjects(); renderActive(); }
 
 // ===== DASHBOARD =====
 function renderDash(){
@@ -534,8 +668,8 @@ function renderDash(){
   }).join('');
   document.getElementById('recentList').innerHTML = rows.slice(0,8).map(r=>`
     <div class="flex gap-3 items-center border rounded-xl p-2">
-      ${thumb(r)?`<img src="${thumb(r)}" class="w-14 h-14 rounded-lg object-cover" alt="">`:`<div class="w-14 h-14 rounded-lg bg-slate-100 grid place-items-center text-2xl">${fileIcon(r.fileKind)}</div>`}
-      <div class="flex-1 min-w-0"><p class="font-medium text-sm truncate">${esc(r.title)}</p><p class="text-xs text-slate-500">${esc(r.fullName)} • ${esc(r.subject)} • ${esc(r.category)}</p></div>
+      ${thumb(r)?`<img src="${thumb(r)}" loading="lazy" decoding="async" class="w-14 h-14 rounded-lg object-cover" alt="">`:`<div class="w-14 h-14 rounded-lg bg-slate-100 grid place-items-center text-2xl">${fileIcon(r.fileKind)}</div>`}
+      <div class="flex-1 min-w-0"><p class="font-medium text-sm truncate">${esc(r.title)}</p><p class="text-xs text-slate-500">${esc(r.fullName)} • ${esc(r.subject)} • ${termShort(r)}</p></div>
       ${statusBadge(r.status)}
     </div>`).join('') || '<p class="text-sm text-slate-400">ยังไม่มีข้อมูล</p>';
   const m=Object.create(null); rows.forEach(r=>{m[r.fullName]=(m[r.fullName]||0)+1;});
@@ -544,24 +678,37 @@ function renderDash(){
   document.getElementById('topStudent').innerHTML=top.map(([n,v],i)=>`<div><div class="flex justify-between text-sm"><span>${i===0?'🥇':i===1?'🥈':i===2?'🥉':'👦'} ${esc(n)}</span><b>${v} ชิ้น</b></div><div class="bar mt-1"><div style="width:${v/max*100}%"></div></div></div>`).join('')||'<p class="text-sm text-slate-400">ยังไม่มีข้อมูล</p>';
 }
 function goPadlet(cat){
+  // พาฟิลเตอร์ ชั้น/ชื่อ/วิชา/ปี/เทอม จากแดชบอร์ดไปด้วย ดูข้อมูลต่อเนื่องไม่หลง
+  try{
+    const pairs = [['dashYear','padYear'],['dashTerm','padTerm'],['dashClass','padClass'],['dashSubject','padSubject']];
+    pairs.forEach(([a,b])=>{ const v=val(a); if(v!==undefined) document.getElementById(b).value=v; });
+    cascadeName('padClass','padName','ทุกคน');
+    const dn = val('dashName');
+    const opts = [...document.getElementById('padName').options].map(o=>o.value);
+    if(dn && opts.includes(dn)) document.getElementById('padName').value = dn;
+  }catch(e){}
+  PAD_LIMIT = PAD_STEP;
   document.querySelector('[data-tab="padlet"]').click();
   document.getElementById('padCategory').value=cat; renderPadlet();
 }
 
-// ===== PADLET =====
+// ===== PADLET (แบ่งหน้า: ไม่เรนเดอร์ทีเดียวหลายร้อยใบ กันค้าง) =====
+function padShowMore(){ PAD_LIMIT += PAD_STEP; renderPadlet(); }
 function renderPadlet(){
+  const y=val('padYear'), t=val('padTerm');
   const s=val('padSubject'), cl=val('padClass'), nm=val('padName'), c=document.getElementById('padCategory').value, q=document.getElementById('padSearch').value.trim().toLowerCase();
-  const rows=ALL.filter(r=>matchSheet(r,s,cl,nm)&&(!c||r.category===c)&&(!q||(r.fullName+r.title+r.description).toLowerCase().includes(q)));
-  document.getElementById('padCount').textContent=`พบ ${rows.length} ชิ้นงาน`;
-  document.getElementById('padWall').innerHTML=rows.map(r=>{
-    const t=thumb(r), url=safeUrl(r.fileUrl);
-    const media = t?`<a href="${url}" target="_blank" rel="noopener"><img src="${t}" loading="lazy" class="preview-img" alt="${esc(r.title)}"></a>`
+  const rows=ALL.filter(r=>matchTerm(r,y,t)&&matchSheet(r,s,cl,nm)&&(!c||r.category===c)&&(!q||(r.fullName+r.title+r.description).toLowerCase().includes(q)));
+  document.getElementById('padCount').textContent=`พบ ${rows.length} ชิ้นงาน` + (y||t ? ` (ปี ${y||'ทุกปี'} เทอม ${t||'ทุกเทอม'})` : '');
+  const show = rows.slice(0, PAD_LIMIT);
+  document.getElementById('padWall').innerHTML=show.map(r=>{
+    const th=thumbLarge(r), url=safeUrl(r.fileUrl);
+    const media = th?`<a href="${url}" target="_blank" rel="noopener"><img src="${th}" loading="lazy" decoding="async" class="preview-img" alt="${esc(r.title)}" onerror="this.outerHTML='<div class=&quot;text-4xl text-center p-8&quot;>🖼️</div>'"></a>`
       : r.fileKind==='pdf'?`<a href="${url}" target="_blank" rel="noopener" class="block bg-gradient-to-br from-violet-100 to-purple-100 rounded-xl p-8 text-center text-4xl">📕<p class="text-xs mt-2 text-purple-700">เปิด PDF</p></a>`
       : `<a href="${url}" target="_blank" rel="noopener" class="block bg-gradient-to-br from-amber-100 to-orange-100 rounded-xl p-8 text-center text-4xl">🔗<p class="text-xs mt-2 text-orange-700 break-all">${esc(r.fileUrl.slice(0,50))}</p></a>`;
     return `<div class="bg-white rounded-2xl border shadow-sm overflow-hidden">
       ${media}
       <div class="p-3">
-        <div class="flex gap-1 flex-wrap mb-1"><span class="badge bg-blue-100 text-blue-700">${esc(r.subject)}</span><span class="badge bg-slate-100 text-slate-600">${esc(r.category)}</span><span class="ml-auto">${statusBadge(r.status)}</span></div>
+        <div class="flex gap-1 flex-wrap mb-1"><span class="badge bg-blue-100 text-blue-700">${esc(r.subject)}</span><span class="badge bg-slate-100 text-slate-600">${esc(r.category)}</span>${termBadge(r)}<span class="ml-auto">${statusBadge(r.status)}</span></div>
         <p class="font-semibold">${esc(r.title)}</p>
         <p class="text-xs text-slate-500">👦 ${esc(r.fullName)}${r.classroom?' ('+esc(r.classroom)+')':''} • ${esc(r.timestamp)}</p>
         ${r.description?`<p class="text-sm mt-1 text-slate-600">${esc(r.description)}</p>`:''}
@@ -569,15 +716,42 @@ function renderPadlet(){
         <a href="${url}" target="_blank" rel="noopener" class="mt-2 inline-block text-sm text-blue-600 hover:underline">เปิดไฟล์ต้นฉบับ →</a>
       </div></div>`;
   }).join('')||'<p class="text-slate-400">ยังไม่มีผลงาน ลองเปลี่ยนตัวกรอง หรือไปหน้าส่งงาน</p>';
+  const more = document.getElementById('padMore');
+  if(more){ more.classList.toggle('hidden', rows.length <= PAD_LIMIT); more.textContent = `โหลดเพิ่ม ↓ (แสดง ${show.length}/${rows.length})`; }
 }
 
-// ===== SUBMIT =====
+// ===== SUBMIT (บีบรูปก่อนส่ง: อัปโหลดเร็ว ไม่ติด timeout Apps Script) =====
+function toBase64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});}
+// ย่อภาพฝั่ง client: ด้านยาวสุด 1600px, JPEG 0.82 — ไฟล์ 4MB เหลือ ~400-700KB
+function compressImage(file, maxDim, quality){
+  return new Promise((resolve)=>{
+    if(!file.type.startsWith('image/')) return resolve(null);
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      try{
+        let w = img.width, h = img.height;
+        const m = Math.max(w, h);
+        const max = maxDim||1600;
+        if(m > max){ const k = max/m; w = Math.round(w*k); h = Math.round(h*k); }
+        else if(file.size < 700*1024){ URL.revokeObjectURL(url); return resolve(null); } // เล็กอยู่แล้ว ไม่ต้องบีบ
+        const cv = document.createElement('canvas'); cv.width=w; cv.height=h;
+        cv.getContext('2d').drawImage(img,0,0,w,h);
+        URL.revokeObjectURL(url);
+        resolve(cv.toDataURL('image/jpeg', quality||0.82));
+      }catch(e){ URL.revokeObjectURL(url); resolve(null); }
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
 document.getElementById('submitForm').onsubmit = async (e)=>{
   e.preventDefault();
   const btn=document.getElementById('submitBtn'), msg=document.getElementById('submitMsg');
   const fd=new FormData(e.target);
-  const payload={ action:'submit', fullName:String(fd.get('fullName')||'').trim(), classroom:String(fd.get('classroom')||'').trim(), subject:fd.get('subject'), category:fd.get('category'), title:String(fd.get('title')||'').trim(), description:String(fd.get('description')||'').trim(), fileKind };
-  if(!payload.fullName||!payload.classroom||!payload.subject||!payload.category||!payload.title){msg.innerHTML='<p class="text-red-600 text-sm">⚠️ กรุณาเลือก ชื่อ-สกุล / ห้อง / วิชา / ประเภท / ชื่อชิ้นงาน (ทั้งหมดดึงจาก Sheet)</p>';return;}
+  const payload={ action:'submit', academicYear:document.getElementById('fYear').value, semester:document.getElementById('fTerm').value, fullName:String(fd.get('fullName')||'').trim(), classroom:String(fd.get('classroom')||'').trim(), subject:fd.get('subject'), category:fd.get('category'), title:String(fd.get('title')||'').trim(), description:String(fd.get('description')||'').trim(), fileKind };
+  if(!payload.academicYear || !/^\d{4}$/.test(payload.academicYear) || (payload.semester!=='1' && payload.semester!=='2')){msg.innerHTML='<p class="text-red-600 text-sm">⚠️ กรุณาเลือก ปีการศึกษา / ภาคเรียน ให้ถูกต้อง</p>';return;}
+  if(!payload.fullName||!payload.classroom||!payload.subject||!payload.category||!payload.title){msg.innerHTML='<p class="text-red-600 text-sm">⚠️ กรุณาเลือก ชั้น / ชื่อ-สกุล / วิชา / ประเภท / ชื่อชิ้นงาน ให้ครบ</p>';return;}
   const subjDupes = SUBJECT_ROWS.filter(o=>o.name===payload.subject);
   const subjOk = !subjDupes.length || subjDupes.some(o=>!o.classrooms || !o.classrooms.length || o.classrooms.includes(payload.classroom));
   if(!subjOk){const allow=uniq(subjDupes.flatMap(o=>o.classrooms||[]));msg.innerHTML=`<p class="text-red-600 text-sm">⚠️ วิชา "${esc(payload.subject)}" ไม่ได้กำหนดให้ห้อง ${esc(payload.classroom)} (กำหนดไว้: ${esc(allow.join(', '))}) กรุณาเลือกวิชาใหม่</p>`;return;}
@@ -591,27 +765,38 @@ document.getElementById('submitForm').onsubmit = async (e)=>{
       if(!f) throw new Error('กรุณาเลือกไฟล์');
       if(f.size>10*1024*1024) throw new Error('ไฟล์ใหญ่เกิน 10MB กรุณาย่อ/บีบอัดก่อน');
       payload.fileName=f.name; payload.mimeType=f.type;
-      payload.fileBase64=await toBase64(f);
+      if(f.type.startsWith('image/')){
+        btn.textContent='⏳ กำลังย่อรูป...';
+        const small = await compressImage(f, 1600, 0.82);
+        if(small){ payload.fileBase64 = small; payload.mimeType='image/jpeg'; }
+        else payload.fileBase64 = await toBase64(f);
+      } else {
+        payload.fileBase64=await toBase64(f);
+      }
+      btn.textContent='⏳ กำลังอัปโหลด...';
     }
-    const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify(payload)});
-    const j=await res.json();
+    const res=await fetchJSON(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify(payload)}, 60000);
+    const j=res;
     if(!j.ok) throw new Error(j.error);
-    msg.innerHTML=`<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">✅ ส่งสำเร็จ! <a href="${safeUrl(j.fileUrl)}" target="_blank" rel="noopener" class="underline">เปิดไฟล์</a> • ข้อมูลลง Sheet แล้ว</div>`;
-    e.target.reset(); document.getElementById('previewBox').classList.add('hidden');
+    msg.innerHTML=`<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">✅ ส่งสำเร็จ! ปี ${esc(j.academicYear)} เทอม ${esc(j.semester)} → ชีต ${esc(j.sheetName||'')} <a href="${safeUrl(j.fileUrl)}" target="_blank" rel="noopener" class="underline">เปิดไฟล์</a></div>`;
+    const keepYear = payload.academicYear, keepTerm = payload.semester;
+    e.target.reset();
+    document.getElementById('fYear').value = keepYear; document.getElementById('fTerm').value = keepTerm;
+    document.getElementById('previewBox').classList.add('hidden');
     cascadeName('fClass','fName','— เลือกชื่อ-สกุล —');
-    loadData();
+    softRefresh(); // ไม่ล้างจอทั้งหน้า
   }catch(err){ msg.innerHTML=`<p class="text-red-600 text-sm">❌ ${esc(err.message)}</p>`; }
   btn.disabled=false; btn.textContent='🚀 ส่งงานเลย';
 };
-function toBase64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});}
 
 // ===== SUMMARY =====
 function sumFiltered(){
+  const y=val('sumYear'), t=val('sumTerm');
   const s=val('sumSubject'), c=val('sumClass'), n=val('sumName'), q=(document.getElementById('sumSearch').value||'').toLowerCase();
-  return ALL.filter(r=>matchSheet(r,s,c,n)&&(!q||(r.fullName+r.title+r.subject+r.category).toLowerCase().includes(q)));
+  return ALL.filter(r=>matchTerm(r,y,t)&&matchSheet(r,s,c,n)&&(!q||(r.fullName+r.title+r.subject+r.category).toLowerCase().includes(q)));
 }
+function sumShowMore(){ SUM_LIMIT += SUM_STEP; renderSummary(); }
 function renderSummary(){
-  const q=(document.getElementById('sumSearch').value||'').toLowerCase();
   const rows=sumFiltered();
   const st={pass:rows.filter(r=>r.status==='ผ่าน').length, wait:rows.filter(r=>r.status==='รอตรวจ').length, fix:rows.filter(r=>r.status==='ต้องแก้ไข').length};
   document.getElementById('sumCards').innerHTML=[
@@ -623,81 +808,119 @@ function renderSummary(){
   document.getElementById('bySubject').innerHTML=g('subject').map(([k,v])=>`<div><div class="flex justify-between text-sm"><span>📚 ${esc(k)}</span><b>${v}</b></div><div class="bar mt-1"><div style="width:${v/maxS*100}%"></div></div></div>`).join('');
   const maxC=Math.max(1,...g('category').map(x=>x[1]));
   document.getElementById('byCategory').innerHTML=g('category').map(([k,v])=>`<div><div class="flex justify-between text-sm"><span>📂 ${esc(k)}</span><b>${v}</b></div><div class="bar mt-1"><div style="width:${v/maxC*100}%;background:linear-gradient(90deg,#f472b6,#e11d48)"></div></div></div>`).join('');
-  document.getElementById('sumTable').innerHTML=rows.map(r=>`<tr class="border-t hover:bg-slate-50"><td class="p-3 whitespace-nowrap text-xs">${esc(r.timestamp)}</td><td class="p-3">${esc(r.fullName)}<div class="text-xs text-slate-400">${esc(r.classroom)}</div></td><td class="p-3">${esc(r.subject)}</td><td class="p-3">${esc(r.category)}</td><td class="p-3">${esc(r.title)}</td><td class="p-3"><a href="${safeUrl(r.fileUrl)}" target="_blank" rel="noopener" class="text-blue-600">${fileIcon(r.fileKind)} เปิด</a></td><td class="p-3">${statusBadge(r.status)}</td></tr>`).join('');
+  const show = rows.slice(0, SUM_LIMIT);
+  document.getElementById('sumTable').innerHTML=show.map(r=>`<tr class="border-t hover:bg-slate-50"><td class="p-3 whitespace-nowrap">${termBadge(r)}</td><td class="p-3 whitespace-nowrap text-xs">${esc(r.timestamp)}</td><td class="p-3">${esc(r.fullName)}<div class="text-xs text-slate-400">${esc(r.classroom)}</div></td><td class="p-3">${esc(r.subject)}</td><td class="p-3">${esc(r.category)}</td><td class="p-3">${esc(r.title)}</td><td class="p-3"><a href="${safeUrl(r.fileUrl)}" target="_blank" rel="noopener" class="text-blue-600">${fileIcon(r.fileKind)} เปิด</a></td><td class="p-3">${statusBadge(r.status)}</td></tr>`).join('');
+  const more = document.getElementById('sumMore'), cnt = document.getElementById('sumCount');
+  if(more) more.classList.toggle('hidden', rows.length <= SUM_LIMIT);
+  if(cnt) cnt.textContent = `แสดง ${show.length}/${rows.length} แถว`;
 }
 function exportCSV(){
-  const head=['Timestamp','ชื่อ-สกุล','ชั้น','วิชา','ประเภท','ชื่อชิ้นงาน','คำอธิบาย','ชนิดไฟล์','File URL','สถานะ','ความเห็นครู'];
+  const head=['ปีการศึกษา','ภาคเรียน','Timestamp','ชื่อ-สกุล','ชั้น','วิชา','ประเภท','ชื่อชิ้นงาน','คำอธิบาย','ชนิดไฟล์','File URL','สถานะ','ความเห็นครู','Sheet'];
   const q2=v=>`"${String(v??'').replace(/"/g,'""')}"`;
-  const lines=[head.join(',')].concat(sumFiltered().map(r=>[r.timestamp,q2(r.fullName),q2(r.classroom),q2(r.subject),q2(r.category),q2(r.title),q2(r.description),r.fileKind,q2(r.fileUrl),q2(r.status),q2(r.comment)].join(',')));
+  const lines=[head.join(',')].concat(sumFiltered().map(r=>[q2(r.academicYear),q2(r.semester),r.timestamp,q2(r.fullName),q2(r.classroom),q2(r.subject),q2(r.category),q2(r.title),q2(r.description),r.fileKind,q2(r.fileUrl),q2(r.status),q2(r.comment),q2(r.sheetName||'')].join(',')));
   const blob=new Blob(["\ufeff"+lines.join('\n')],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Workpiece Storage_export.csv';a.click();
 }
 
-// ===== CHECK =====
+// ===== CHECK (แบ่งหน้า + ปุ่มกันกดซ้ำ + อัปเดตเฉพาะจุด ไม่รีโหลดทั้งหน้า) =====
+function chkShowMore(){ CHK_LIMIT += CHK_STEP; renderCheck(); }
 function renderCheck(){
+  const y=val('chkYear'), t=val('chkTerm');
   const c=document.getElementById('chkCategory').value, s=val('chkSubject'), cl=val('chkClass'), nm=val('chkName'), st=document.getElementById('chkStatus').value, q=document.getElementById('chkSearch').value.trim().toLowerCase();
-  const rows=ALL.filter(r=>matchSheet(r,s,cl,nm)&&(!c||r.category===c)&&(!st||r.status===st)&&(!q||r.title.toLowerCase().includes(q)));
-  document.getElementById('chkCount').textContent=`พบ ${rows.length} ชิ้น • รอตรวจ ${rows.filter(r=>r.status==='รอตรวจ').length} ชิ้น`;
-  document.getElementById('chkList').innerHTML=rows.map(r=>{
-    const t=thumb(r);
-    return `<div class="bg-white rounded-2xl border p-4 flex flex-col md:flex-row gap-4">
-      <div class="md:w-40 shrink-0">${t?`<img src="${t}" class="w-full h-28 object-cover rounded-xl" alt="">`:`<div class="w-full h-28 rounded-xl bg-slate-100 grid place-items-center text-4xl">${fileIcon(r.fileKind)}</div>`}</div>
+  const rows=ALL.filter(r=>matchTerm(r,y,t)&&matchSheet(r,s,cl,nm)&&(!c||r.category===c)&&(!st||r.status===st)&&(!q||r.title.toLowerCase().includes(q)));
+  document.getElementById('chkCount').textContent=`พบ ${rows.length} ชิ้น • รอตรวจ ${rows.filter(r=>r.status==='รอตรวจ').length} ชิ้น` + (y||t ? ` • ปี ${y||'ทุกปี'} เทอม ${t||'ทุกเทอม'}` : '');
+  const show = rows.slice(0, CHK_LIMIT);
+  document.getElementById('chkList').innerHTML=show.map(r=>{
+    const th=thumb(r);
+    return `<div class="bg-white rounded-2xl border p-4 flex flex-col md:flex-row gap-4" id="chk-${esc(r.sheetName||'ผลงาน')}-${r.row}">
+      <div class="md:w-40 shrink-0">${th?`<img src="${th}" loading="lazy" decoding="async" class="w-full h-28 object-cover rounded-xl" alt="">`:`<div class="w-full h-28 rounded-xl bg-slate-100 grid place-items-center text-4xl">${fileIcon(r.fileKind)}</div>`}</div>
       <div class="flex-1">
-        <p class="font-semibold">${esc(r.title)} ${statusBadge(r.status)}</p>
-        <p class="text-sm text-slate-500">👦 ${esc(r.fullName)}${r.classroom?' ('+esc(r.classroom)+')':''} • 📚 ${esc(r.subject)} • 📂 ${esc(r.category)} • ${esc(r.timestamp)}</p>
+        <p class="font-semibold">${esc(r.title)} ${statusBadge(r.status)} ${termBadge(r)}</p>
+        <p class="text-sm text-slate-500">👦 ${esc(r.fullName)}${r.classroom?' ('+esc(r.classroom)+')':''} • 📚 ${esc(r.subject)} • 📂 ${esc(r.category)} • ${esc(r.timestamp)} • ชีต ${esc(r.sheetName||'ผลงาน')}</p>
         ${r.description?`<p class="text-sm mt-1">${esc(r.description)}</p>`:''}
         <a href="${safeUrl(r.fileUrl)}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline">เปิดไฟล์ต้นฉบับ →</a>
         <div class="flex flex-wrap gap-2 mt-3">
-          <input id="cmt-${r.row}" value="${esc(r.comment||'')}" placeholder="💬 ความเห็นครู..." ${ADMIN?'':'disabled'} class="border rounded-xl px-3 py-1.5 text-sm flex-1 min-w-[180px] disabled:bg-slate-100">
-          <button onclick="setStatus(${r.row},'ผ่าน')" class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-sm">✅ ผ่าน</button>
-          <button onclick="setStatus(${r.row},'ต้องแก้ไข')" class="px-3 py-1.5 rounded-xl bg-red-500 text-white text-sm">✏️ แก้ไข</button>
-          <button onclick="setStatus(${r.row},'รอตรวจ')" class="px-3 py-1.5 rounded-xl bg-slate-200 text-sm">⏳ รอตรวจ</button>
-          ${ADMIN?`<button onclick="delWork(${r.row})" class="px-3 py-1.5 rounded-xl bg-slate-900 text-white text-sm">🗑️ ลบ</button>`:''}
+          <input id="cmt-${esc(r.sheetName||'')}-${r.row}" value="${esc(r.comment||'')}" placeholder="💬 ความเห็นครู..." ${ADMIN?'':'disabled'} class="border rounded-xl px-3 py-1.5 text-sm flex-1 min-w-[180px] disabled:bg-slate-100">
+          <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ผ่าน',this)" class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-sm disabled:opacity-50">✅ ผ่าน</button>
+          <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ต้องแก้ไข',this)" class="px-3 py-1.5 rounded-xl bg-red-500 text-white text-sm disabled:opacity-50">✏️ แก้ไข</button>
+          <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'รอตรวจ',this)" class="px-3 py-1.5 rounded-xl bg-slate-200 text-sm disabled:opacity-50">⏳ รอตรวจ</button>
+          ${ADMIN?`<button onclick="delWork('${esc(r.sheetName||'ผลงาน')}',${r.row})" class="px-3 py-1.5 rounded-xl bg-slate-900 text-white text-sm">🗑️ ลบ</button>`:''}
         </div>
       </div></div>`;
   }).join('')||'<p class="text-slate-400 text-sm">ไม่พบงานตามเงื่อนไข</p>';
+  const more = document.getElementById('chkMore');
+  if(more){ more.classList.toggle('hidden', rows.length <= CHK_LIMIT); more.textContent = `โหลดเพิ่ม ↓ (แสดง ${show.length}/${rows.length})`; }
 }
-async function setStatus(row,status){
-  if(!ADMIN) return alert('🔒 ต้องล็อกอิน Admin ก่อน');
-  const cmt=(document.getElementById('cmt-'+row)?.value||'');
+async function setStatus(sheetName,row,status,btn){
+  if(!ADMIN) return alert('🔒 ต้องล็อกอิน Admin ก่อน (USER: FirstStar)');
+  if(btn){ if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true; }
+  const cmt=(document.getElementById('cmt-'+sheetName+'-'+row)?.value||'');
+  const ref = ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row));
   try{
-    const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'updateStatus',row,status,comment:cmt,...adminAuth()})});
+    const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'updateStatus',row,status,comment:cmt,sheetName,...(ref?termKeys(ref):{}),...adminAuth()})});
     const j=await res.json(); if(!j.ok) throw new Error(j.error);
-    const it=ALL.find(r=>r.row===row); if(it){it.status=status;it.comment=cmt;}
-    renderAll();
+    const it=ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row)); if(it){it.status=status;it.comment=cmt;}
+    renderCheck(); // อัปเดตเฉพาะหน้านี้ ไม่โหลดใหม่ทั้งระบบ
+    if(ACTIVE_TAB==='dashboard') renderDash();
   }catch(e){alert('บันทึกไม่สำเร็จ: '+e.message);}
+  if(btn){ btn.dataset.busy='0'; btn.disabled=false; }
 }
-async function delWork(row){
+async function delWork(sheetName,row){
   if(!ADMIN) return alert('🔒 ต้องล็อกอิน Admin ก่อน');
-  if(!confirm('ลบงานชิ้นนี้ (พร้อมไฟล์ใน Drive)?')) return;
+  if(!confirm('ลบงานชิ้นนี้ (พร้อมไฟล์ใน Drive)? ['+sheetName+' แถว '+row+']')) return;
+  const ref = ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row));
   try{
-    const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'deleteWork',row,...adminAuth()})});
+    const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'deleteWork',row,sheetName,...(ref?termKeys(ref):{}),...adminAuth()})});
     const j=await res.json(); if(!j.ok) throw new Error(j.error);
-    loadData();
+    // อัปเดต local ทันที + ชดเชยเลขแถวที่เลื่อนหลัง deleteRow (ข้อมูลตรง ไม่ต้องรอโหลด)
+    ALL = ALL.filter(r=>!(String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row)));
+    ALL.forEach(r=>{ if(String(r.sheetName)===String(sheetName) && Number(r.row)>Number(row)) r.row = Number(r.row)-1; });
+    renderActive();
   }catch(e){alert('ลบไม่สำเร็จ: '+e.message);}
 }
 
-// live search (ห้อง -> ชื่อเฉพาะห้องนั้น + วิชาเฉพาะห้องนั้น)
+// ตัวเลือกดูข้อมูลทุกหน้าเรียง [ชั้น → ชื่อ → วิชา]: เลือกชั้นแล้วชื่อ/วิชาเหลือเฉพาะห้องนั้น
+function smartAutoClass(nameId, classId){
+  const nm = document.getElementById(nameId)?.value || '';
+  if(!nm) return;
+  const curCls = document.getElementById(classId)?.value || '';
+  if(curCls && namesForClass(curCls).includes(nm)) return; // ตรงอยู่แล้ว ไม่ขยับให้งง
+  const cls = classroomOf(nm);
+  if(cls) document.getElementById(classId).value = cls;
+}
+function resetPageLimit(render){
+  if(render===renderPadlet) PAD_LIMIT = PAD_STEP;
+  if(render===renderCheck) CHK_LIMIT = CHK_STEP;
+  if(render===renderSummary) SUM_LIMIT = SUM_STEP;
+}
 function wirePair(classId, nameId, subjectId, render){
-  document.getElementById(classId).oninput = ()=>{
+  document.getElementById(classId).onchange = ()=>{
     cascadeName(classId, nameId, document.getElementById(nameId).querySelector('option')?.textContent||'');
     const subjFirst = document.getElementById(subjectId).querySelector('option')?.textContent || '';
     setSel(subjectId, subjectsForClass(document.getElementById(classId).value), subjFirst);
-    render();
+    resetPageLimit(render); render();
   };
-  document.getElementById(nameId).oninput = ()=>{ autoClass(nameId, classId); const subjFirst = document.getElementById(subjectId).querySelector('option')?.textContent || ''; setSel(subjectId, subjectsForClass(document.getElementById(classId).value), subjFirst); render(); };
+  document.getElementById(nameId).onchange = ()=>{ smartAutoClass(nameId, classId); const subjFirst = document.getElementById(subjectId).querySelector('option')?.textContent || ''; setSel(subjectId, subjectsForClass(document.getElementById(classId).value), subjFirst); resetPageLimit(render); render(); };
 }
 wirePair('dashClass','dashName','dashSubject',renderDash);
 wirePair('padClass','padName','padSubject',renderPadlet);
 wirePair('sumClass','sumName','sumSubject',renderSummary);
 wirePair('chkClass','chkName','chkSubject',renderCheck);
-['dashSubject','dashSearch'].forEach(id=>document.getElementById(id).oninput=renderDash);
-['padSubject','padCategory','padSearch'].forEach(id=>document.getElementById(id).oninput=renderPadlet);
-document.getElementById('sumSubject').oninput=renderSummary;
-document.getElementById('sumSearch').oninput=renderSummary;
-['chkCategory','chkSubject','chkStatus','chkSearch'].forEach(id=>document.getElementById(id).oninput=renderCheck);
+const dDash = debounce(()=>{ resetPageLimit(renderDash); renderDash(); }, 250);
+const dPad = debounce(()=>{ PAD_LIMIT=PAD_STEP; renderPadlet(); }, 250);
+const dSum = debounce(()=>{ SUM_LIMIT=SUM_STEP; renderSummary(); }, 250);
+const dChk = debounce(()=>{ CHK_LIMIT=CHK_STEP; renderCheck(); }, 250);
+['dashSubject','dashYear','dashTerm'].forEach(id=>document.getElementById(id).onchange=()=>{ resetPageLimit(renderDash); renderDash(); });
+document.getElementById('dashSearch').oninput=dDash;
+['padSubject','padCategory','padYear','padTerm'].forEach(id=>document.getElementById(id).onchange=()=>{ PAD_LIMIT=PAD_STEP; renderPadlet(); });
+document.getElementById('padSearch').oninput=dPad;
+['sumSubject','sumYear','sumTerm'].forEach(id=>document.getElementById(id).onchange=()=>{ SUM_LIMIT=SUM_STEP; renderSummary(); });
+document.getElementById('sumSearch').oninput=dSum;
+['chkCategory','chkSubject','chkStatus','chkYear','chkTerm'].forEach(id=>document.getElementById(id).onchange=()=>{ CHK_LIMIT=CHK_STEP; renderCheck(); });
+document.getElementById('chkSearch').oninput=dChk;
 document.getElementById('adPass')?.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 
+fillTermSelects();
 refreshAdminUI();
 loadData();
 </script>
