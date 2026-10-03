@@ -434,7 +434,7 @@ async function doLogin(){
     msg.innerHTML='<span class="text-emerald-600">✅ เข้าสู่ระบบสำเร็จ</span>'; refreshAdminUI();
   }catch(e){ msg.innerHTML='<span class="text-red-600">❌ '+e.message+'</span>'; }
 }
-function doLogout(){ ADMIN=null; sessionStorage.removeItem('Workpiece Storage_admin'); document.getElementById('adUser').value='';document.getElementById('adPass').value='';refreshAdminUI(); }
+function doLogout(){ ADMIN=null; sessionStorage.removeItem('Workpiece Storage_admin'); document.getElementById('adUser').value='';document.getElementById('adPass').value='';document.getElementById('loginMsg').innerHTML='';refreshAdminUI(); }
 async function adminPost(payload){
   const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({...payload,...adminAuth()})});
   const j=await res.json(); if(!j.ok) throw new Error(j.error||'บันทึกไม่สำเร็จ'); return j;
@@ -658,7 +658,7 @@ function renderCheck(){
   }).join('')||'<p class="text-slate-400 text-sm">ไม่พบงานตามเงื่อนไข</p>';
 }
 async function setStatus(row,status){
-  if(!ADMIN) return alert('🔒 ต้องล็อกอิน Admin ก่อน (USER: FirstStar)');
+  if(!ADMIN) return alert('🔒 ต้องล็อกอิน Admin ก่อน');
   const cmt=(document.getElementById('cmt-'+row)?.value||'');
   try{
     const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'updateStatus',row,status,comment:cmt,...adminAuth()})});
