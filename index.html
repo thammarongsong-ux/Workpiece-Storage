@@ -16,7 +16,7 @@ let SUBJECTS = ['ภาษาไทย','คณิตศาสตร์','วิ
 let STUDENTS = [];
 let TERMS = []; // [{year, semester, termId, sheetName}] จาก backend
 let CURRENT_TERM = null; // {year, semester}
-const BACKEND_VERSION = 'term-3'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
+const BACKEND_VERSION = 'term-4'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
 const CATEGORIES = [
   { name:'ใบงาน', icon:'📝', color:'from-amber-400 to-orange-500' },
   { name:'โครงงาน', icon:'🔬', color:'from-emerald-400 to-teal-600' },
@@ -135,10 +135,19 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
         <p class="md:col-span-2 text-xs text-indigo-700">ไฟล์จะเข้าโฟลเดอร์ <b>ปีการศึกษา xxxx → ภาคเรียนที่ x</b> และลงชีต <b>ผลงาน_xxxx_x</b> อัตโนมัติ</p>
       </div>
       <div class="grid md:grid-cols-2 gap-3">
-        <div><label class="text-sm font-medium">ชื่อ-สกุล * <span class="text-xs text-slate-400">(จาก Sheet)</span></label><select name="fullName" id="fName" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">— เลือกชื่อ —</option></select></div>
-        <div><label class="text-sm font-medium">ชั้น / ห้อง * <span class="text-xs text-slate-400">(จาก Sheet)</span></label><select name="classroom" id="fClass" required class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">— เลือกห้อง —</option></select></div>
+        <div><label class="text-sm font-medium">ชื่อ-สกุล * <span class="text-xs text-slate-400">(จาก Sheet)</span></label><select name="fullName" id="fName" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">— เลือกชื่อ —</option></select></div>
+        <div><label class="text-sm font-medium">ชั้น / ห้อง * <span class="text-xs text-slate-400">(จาก Sheet)</span></label><select name="classroom" id="fClass" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">— เลือกห้อง —</option></select></div>
         <div><label class="text-sm font-medium">วิชา *</label><select name="subject" required id="fSubject" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></select></div>
         <div><label class="text-sm font-medium">ประเภทงาน *</label><select name="category" required id="fCategory" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></select></div>
+      </div>
+      <div class="bg-indigo-50/50 border border-indigo-200 rounded-xl p-3">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-sm font-medium flex-1">👥 สมาชิกในงานชิ้นนี้ <span id="memberCount" class="text-xs text-slate-400">งานเดี่ยวไม่ต้องกดเพิ่ม</span></span>
+          <button type="button" onclick="addMember()" class="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-sm">＋ เพิ่มคนนี้</button>
+          <button type="button" onclick="clearMembers()" class="px-3 py-1.5 rounded-xl bg-slate-200 text-sm">ล้าง</button>
+        </div>
+        <div id="memberList" class="flex flex-wrap gap-1.5 mt-2"></div>
+        <p class="text-xs text-slate-400 mt-1">งานกลุ่ม: เลือกชั้น+ชื่อทีละคนแล้วกด “＋ เพิ่มคนนี้” อัปโหลดไฟล์ครั้งเดียว ระบบแตกแถวรายคนให้ (กรอง/เช็คตามชื่อได้เหมือนงานเดี่ยว)</p>
       </div>
       <div><label class="text-sm font-medium">ชื่อชิ้นงาน *</label><input name="title" required placeholder="เช่น ภาพวาดวันแม่, รายงานวิทย์ บทที่ 2" class="mt-1 w-full border rounded-xl px-3 py-2.5"></div>
       <div><label class="text-sm font-medium">คำอธิบาย</label><textarea name="description" rows="3" placeholder="เล่าที่มา / วิธีทำ / สิ่งที่ภูมิใจ..." class="mt-1 w-full border rounded-xl px-3 py-2.5"></textarea></div>
@@ -307,6 +316,39 @@ function termBadge(r){
   return '<span class="badge bg-slate-100 text-slate-500">📦 คลังเดิม</span>';
 }
 function termShort(r){ return (r.academicYear && r.semester) ? r.academicYear+'/'+r.semester : 'คลังเดิม'; }
+function groupBadge(r){
+  if(r.groupId) return '<span class="badge bg-violet-100 text-violet-700">👥 กลุ่ม</span>';
+  return '';
+}
+function groupMates(r){
+  if(!r.groupId) return [];
+  return ALL.filter(x=>x.groupId===r.groupId && !(String(x.sheetName)===String(r.sheetName) && Number(x.row)===Number(r.row)));
+}
+function groupLine(r){
+  const mates = groupMates(r);
+  if(!mates.length) return '';
+  const names = [r.fullName, ...mates.map(m=>m.fullName)];
+  return `<p class="text-xs mt-1 text-violet-700">👥 งานกลุ่ม ${names.length} คน: ${esc(names.join(', '))}</p>`;
+}
+// สมาชิกงานกลุ่มในฟอร์มส่งงาน
+let MEMBERS = [];
+function renderMembers(){
+  const box = document.getElementById('memberList'); if(!box) return;
+  box.innerHTML = MEMBERS.map((m,i)=>`<span class="badge bg-indigo-600 text-white px-2.5 py-1" style="font-size:.75rem">👦 ${esc(m.fullName)} (${esc(m.classroom)}) <button type="button" onclick="removeMember(${i})" class="ml-1 font-bold">×</button></span>`).join('') || '<span class="text-xs text-slate-400">ยังไม่มี — งานเดี่ยวส่งได้เลย ไม่ต้องกดเพิ่ม</span>';
+  const c = document.getElementById('memberCount');
+  if(c) c.textContent = MEMBERS.length ? `(${MEMBERS.length} คน)` : 'งานเดี่ยวไม่ต้องกดเพิ่ม';
+}
+function addMember(){
+  const nm = document.getElementById('fName')?.value || '';
+  const cl = document.getElementById('fClass')?.value || '';
+  if(!nm || !cl) return alert('เลือกชั้น + ชื่อก่อนกดเพิ่ม');
+  if(MEMBERS.some(m=>m.fullName===nm && m.classroom===cl)) return alert('มีชื่อนี้ในกลุ่มแล้ว');
+  if(MEMBERS.length >= 10) return alert('กลุ่มใหญ่สุด 10 คน');
+  MEMBERS.push({fullName:nm, classroom:cl});
+  renderMembers();
+}
+function removeMember(i){ MEMBERS.splice(i,1); renderMembers(); }
+function clearMembers(){ MEMBERS = []; renderMembers(); }
 function collectYears(){
   const set = new Set();
   ALL.forEach(r=>{ if(/^\d{4}$/.test(r.academicYear||'')) set.add(r.academicYear); });
@@ -745,9 +787,10 @@ function renderPadlet(){
     return `<div class="bg-white rounded-2xl border shadow-sm overflow-hidden">
       ${media}
       <div class="p-3">
-        <div class="flex gap-1 flex-wrap mb-1"><span class="badge bg-blue-100 text-blue-700">${esc(r.subject)}</span><span class="badge bg-slate-100 text-slate-600">${esc(r.category)}</span>${termBadge(r)}<span class="ml-auto">${statusBadge(r.status)}</span></div>
+        <div class="flex gap-1 flex-wrap mb-1"><span class="badge bg-blue-100 text-blue-700">${esc(r.subject)}</span><span class="badge bg-slate-100 text-slate-600">${esc(r.category)}</span>${termBadge(r)}${groupBadge(r)}<span class="ml-auto">${statusBadge(r.status)}</span></div>
         <p class="font-semibold">${esc(r.title)}</p>
         <p class="text-xs text-slate-500">👦 ${esc(r.fullName)}${r.classroom?' ('+esc(r.classroom)+')':''} • ${esc(r.timestamp)}</p>
+        ${groupLine(r)}
         ${r.description?`<p class="text-sm mt-1 text-slate-600">${esc(r.description)}</p>`:''}
         ${r.comment?`<p class="text-xs mt-2 bg-yellow-50 border border-yellow-200 rounded-lg p-2">💬 ครู: ${esc(r.comment)}</p>`:''}
         <a href="${url}" target="_blank" rel="noopener" class="mt-2 inline-block text-sm text-blue-600 hover:underline">เปิดไฟล์ต้นฉบับ →</a>
@@ -787,11 +830,16 @@ document.getElementById('submitForm').onsubmit = async (e)=>{
   const btn=document.getElementById('submitBtn'), msg=document.getElementById('submitMsg');
   const fd=new FormData(e.target);
   const payload={ action:'submit', academicYear:document.getElementById('fYear').value, semester:document.getElementById('fTerm').value, fullName:String(fd.get('fullName')||'').trim(), classroom:String(fd.get('classroom')||'').trim(), subject:fd.get('subject'), category:fd.get('category'), title:String(fd.get('title')||'').trim(), description:String(fd.get('description')||'').trim(), fileKind };
+  payload.members = MEMBERS.length ? MEMBERS.slice() : [{fullName:payload.fullName, classroom:payload.classroom}];
   if(!payload.academicYear || !/^\d{4}$/.test(payload.academicYear) || (payload.semester!=='1' && payload.semester!=='2')){msg.innerHTML='<p class="text-red-600 text-sm">⚠️ กรุณาเลือก ปีการศึกษา / ภาคเรียน ให้ถูกต้อง</p>';return;}
-  if(!payload.fullName||!payload.classroom||!payload.subject||!payload.category||!payload.title){msg.innerHTML='<p class="text-red-600 text-sm">⚠️ กรุณาเลือก ชั้น / ชื่อ-สกุล / วิชา / ประเภท / ชื่อชิ้นงาน ให้ครบ</p>';return;}
+  const members = payload.members.filter(m=>m.fullName && m.classroom);
+  if(!members.length){msg.innerHTML='<p class="text-red-600 text-sm">⚠️ กรุณาเพิ่มสมาชิกอย่างน้อย 1 คน (เลือกชั้น+ชื่อแล้วกด ＋ เพิ่มคนนี้ หรือเลือกชื่อส่งเดี่ยว)</p>';return;}
+  if(!payload.subject||!payload.category||!payload.title){msg.innerHTML='<p class="text-red-600 text-sm">⚠️ กรุณาเลือก วิชา / ประเภท / ชื่อชิ้นงาน ให้ครบ</p>';return;}
   const subjDupes = SUBJECT_ROWS.filter(o=>o.name===payload.subject);
-  const subjOk = !subjDupes.length || subjDupes.some(o=>!o.classrooms || !o.classrooms.length || o.classrooms.includes(payload.classroom));
-  if(!subjOk){const allow=uniq(subjDupes.flatMap(o=>o.classrooms||[]));msg.innerHTML=`<p class="text-red-600 text-sm">⚠️ วิชา "${esc(payload.subject)}" ไม่ได้กำหนดให้ห้อง ${esc(payload.classroom)} (กำหนดไว้: ${esc(allow.join(', '))}) กรุณาเลือกวิชาใหม่</p>`;return;}
+  const subjAllow = uniq(subjDupes.flatMap(o=>o.classrooms||[]));
+  const badM = (!subjDupes.length || !subjAllow.length) ? [] : members.filter(m=>!subjAllow.includes(m.classroom));
+  if(badM.length){msg.innerHTML=`<p class="text-red-600 text-sm">⚠️ วิชา "${esc(payload.subject)}" ไม่ได้กำหนดให้ห้อง ${esc(badM.map(m=>m.classroom).join(', '))} (กำหนดไว้: ${esc(subjAllow.join(', '))}) กรุณาเลือกวิชาใหม่</p>`;return;}
+  payload.members = members;
   btn.disabled=true; btn.textContent='⏳ กำลังส่ง...'; msg.innerHTML='';
   try{
     if(fileKind==='link'){
@@ -815,12 +863,13 @@ document.getElementById('submitForm').onsubmit = async (e)=>{
     const res=await fetchJSON(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify(payload)}, 60000);
     const j=res;
     if(!j.ok) throw new Error(j.error);
-    msg.innerHTML=`<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">✅ ส่งสำเร็จ! ปี ${esc(j.academicYear)} เทอม ${esc(j.semester)} → ชีต ${esc(j.sheetName||'')} <a href="${safeUrl(j.fileUrl)}" target="_blank" rel="noopener" class="underline">เปิดไฟล์</a></div>`;
+    msg.innerHTML=`<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">✅ ส่งสำเร็จ! ปี ${esc(j.academicYear)} เทอม ${esc(j.semester)} → ชีต ${esc(j.sheetName||'')}${(j.rows||1)>1?` • งานกลุ่ม ${j.rows} คน`:''} <a href="${safeUrl(j.fileUrl)}" target="_blank" rel="noopener" class="underline">เปิดไฟล์</a></div>`;
     const keepYear = payload.academicYear, keepTerm = payload.semester;
     e.target.reset();
     document.getElementById('fYear').value = keepYear; document.getElementById('fTerm').value = keepTerm;
     document.getElementById('previewBox').classList.add('hidden');
     cascadeName('fClass','fName','— เลือกชื่อ-สกุล —');
+    MEMBERS = []; renderMembers();
     softRefresh(); // ไม่ล้างจอทั้งหน้า
   }catch(err){ msg.innerHTML=`<p class="text-red-600 text-sm">❌ ${esc(err.message)}</p>`; }
   btn.disabled=false; btn.textContent='🚀 ส่งงานเลย';
@@ -846,15 +895,15 @@ function renderSummary(){
   const maxC=Math.max(1,...g('category').map(x=>x[1]));
   document.getElementById('byCategory').innerHTML=g('category').map(([k,v])=>`<div><div class="flex justify-between text-sm"><span>📂 ${esc(k)}</span><b>${v}</b></div><div class="bar mt-1"><div style="width:${v/maxC*100}%;background:linear-gradient(90deg,#f472b6,#e11d48)"></div></div></div>`).join('');
   const show = rows.slice(0, SUM_LIMIT);
-  document.getElementById('sumTable').innerHTML=show.map(r=>`<tr class="border-t hover:bg-slate-50"><td class="p-3 whitespace-nowrap">${termBadge(r)}</td><td class="p-3 whitespace-nowrap text-xs">${esc(r.timestamp)}</td><td class="p-3">${esc(r.fullName)}<div class="text-xs text-slate-400">${esc(r.classroom)}</div></td><td class="p-3">${esc(r.subject)}</td><td class="p-3">${esc(r.category)}</td><td class="p-3">${esc(r.title)}</td><td class="p-3"><a href="${safeUrl(r.fileUrl)}" target="_blank" rel="noopener" class="text-blue-600">${fileIcon(r.fileKind)} เปิด</a></td><td class="p-3">${statusBadge(r.status)}</td></tr>`).join('');
+  document.getElementById('sumTable').innerHTML=show.map(r=>`<tr class="border-t hover:bg-slate-50"><td class="p-3 whitespace-nowrap">${termBadge(r)}</td><td class="p-3 whitespace-nowrap text-xs">${esc(r.timestamp)}</td><td class="p-3">${esc(r.fullName)}${r.groupId?' 👥':''}<div class="text-xs text-slate-400">${esc(r.classroom)}</div></td><td class="p-3">${esc(r.subject)}</td><td class="p-3">${esc(r.category)}</td><td class="p-3">${esc(r.title)}</td><td class="p-3"><a href="${safeUrl(r.fileUrl)}" target="_blank" rel="noopener" class="text-blue-600">${fileIcon(r.fileKind)} เปิด</a></td><td class="p-3">${statusBadge(r.status)}</td></tr>`).join('');
   const more = document.getElementById('sumMore'), cnt = document.getElementById('sumCount');
   if(more) more.classList.toggle('hidden', rows.length <= SUM_LIMIT);
   if(cnt) cnt.textContent = `แสดง ${show.length}/${rows.length} แถว`;
 }
 function exportCSV(){
-  const head=['ปีการศึกษา','ภาคเรียน','Timestamp','ชื่อ-สกุล','ชั้น','วิชา','ประเภท','ชื่อชิ้นงาน','คำอธิบาย','ชนิดไฟล์','File URL','สถานะ','ความเห็นครู','Sheet'];
+  const head=['ปีการศึกษา','ภาคเรียน','Timestamp','ชื่อ-สกุล','ชั้น','วิชา','ประเภท','ชื่อชิ้นงาน','คำอธิบาย','ชนิดไฟล์','File URL','สถานะ','ความเห็นครู','Sheet','รหัสกลุ่ม'];
   const q2=v=>`"${String(v??'').replace(/"/g,'""')}"`;
-  const lines=[head.join(',')].concat(sumFiltered().map(r=>[q2(r.academicYear),q2(r.semester),r.timestamp,q2(r.fullName),q2(r.classroom),q2(r.subject),q2(r.category),q2(r.title),q2(r.description),r.fileKind,q2(r.fileUrl),q2(r.status),q2(r.comment),q2(r.sheetName||'')].join(',')));
+  const lines=[head.join(',')].concat(sumFiltered().map(r=>[q2(r.academicYear),q2(r.semester),r.timestamp,q2(r.fullName),q2(r.classroom),q2(r.subject),q2(r.category),q2(r.title),q2(r.description),r.fileKind,q2(r.fileUrl),q2(r.status),q2(r.comment),q2(r.sheetName||''),q2(r.groupId||'')].join(',')));
   const blob=new Blob(["\ufeff"+lines.join('\n')],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Workpiece Storage_export.csv';a.click();
 }
@@ -872,8 +921,9 @@ function renderCheck(){
     return `<div class="bg-white rounded-2xl border p-4 flex flex-col md:flex-row gap-4" id="chk-${esc(r.sheetName||'ผลงาน')}-${r.row}">
       <div class="md:w-40 shrink-0">${th?`<img src="${th}" loading="lazy" decoding="async" class="w-full h-28 object-cover rounded-xl" alt="">`:`<div class="w-full h-28 rounded-xl bg-slate-100 grid place-items-center text-4xl">${fileIcon(r.fileKind)}</div>`}</div>
       <div class="flex-1">
-        <p class="font-semibold">${esc(r.title)} ${statusBadge(r.status)} ${termBadge(r)}</p>
+        <p class="font-semibold">${esc(r.title)} ${statusBadge(r.status)} ${termBadge(r)} ${groupBadge(r)}</p>
         <p class="text-sm text-slate-500">👦 ${esc(r.fullName)}${r.classroom?' ('+esc(r.classroom)+')':''} • 📚 ${esc(r.subject)} • 📂 ${esc(r.category)} • ${esc(r.timestamp)} • ชีต ${esc(r.sheetName||'ผลงาน')}</p>
+        ${groupLine(r)}
         ${r.description?`<p class="text-sm mt-1">${esc(r.description)}</p>`:''}
         <a href="${safeUrl(r.fileUrl)}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline">เปิดไฟล์ต้นฉบับ →</a>
         <div class="flex flex-wrap gap-2 mt-3">
@@ -959,6 +1009,7 @@ document.getElementById('adPass')?.addEventListener('keydown', e=>{ if(e.key==='
 
 fillTermSelects();
 refreshAdminUI();
+renderMembers();
 loadData();
 </script>
 </body>
