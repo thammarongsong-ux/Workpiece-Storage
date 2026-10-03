@@ -373,7 +373,7 @@ function editStudent_(d) {
       const n = ws.getLastRow() - 1;
       const cols = ws.getRange(2, 2, n, 2).getValues();
       for (let i = 0; i < n; i++) {
-        if (String(cols[i][0]).trim() === oldName) {
+        if (String(cols[i][0]).trim() === oldName && String(cols[i][1]).trim() === oldClass) {
           if (oldName !== name) ws.getRange(i + 2, 2).setValue(name);
           if (oldClass !== classroom) ws.getRange(i + 2, 3).setValue(classroom);
           updated++;
