@@ -24,11 +24,11 @@ const CONFIG = {
   SHEET_STUDENTS: 'นักเรียน',
   ADMIN_USER: 'FirstStar',
   ADMIN_PASS: '574001',
-  VERSION: 'term-3', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
+  VERSION: 'term-4', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
   HEADERS: [
     'Timestamp','ชื่อ-สกุล','ชั้น/ห้อง','วิชา','ประเภทงาน','ชื่อชิ้นงาน',
     'คำอธิบาย','ชนิดไฟล์','ชื่อไฟล์','File URL','Drive File ID','สถานะตรวจ','ความเห็นครู',
-    'ปีการศึกษา','ภาคเรียน'
+    'ปีการศึกษา','ภาคเรียน','รหัสกลุ่ม'
   ],
   HEADERS_LEGACY_LEN: 13,
   DEFAULT_SUBJECTS: ['ภาษาไทย','คณิตศาสตร์','วิทยาศาสตร์','ภาษาอังกฤษ','สังคมศึกษา','ศิลปะ','การงานอาชีพ','สุขศึกษา/พละ','คอมพิวเตอร์']
@@ -97,7 +97,7 @@ function setupSheet() {
   Logger.log('setupSheet OK, current term: ' + cur.year + '/' + cur.semester);
 }
 
-/** เติม/อัปเกรดหัวตารางเป็น 15 คอลัมน์ (รองรับชีตเก่า 13 คอลัมน์โดยไม่ลบข้อมูล) */
+/** เติม/อัปเกรดหัวตารางเป็น 16 คอลัมน์ (รองรับชีตเก่า 13/15 คอลัมน์โดยไม่ลบข้อมูล) */
 function ensureHeaders_(sh) {
   if (!sh) return sh;
   if (sh.getLastRow() === 0) {
@@ -109,11 +109,13 @@ function ensureHeaders_(sh) {
   if (width < CONFIG.HEADERS.length) {
     sh.getRange(1, 1, 1, CONFIG.HEADERS.length).setValues([CONFIG.HEADERS]);
   } else {
-    // เติมเฉพาะหัวที่ขาด (คอลัมน์ 14-15) กันทับหัวเดิมที่ผู้ใช้อาจแก้
+    // เติมเฉพาะหัวที่ขาด (คอลัมน์ 14-16) กันทับหัวเดิมที่ผู้ใช้อาจแก้
     const h14 = String(sh.getRange(1, 14).getValue() || '').trim();
     const h15 = String(sh.getRange(1, 15).getValue() || '').trim();
+    const h16 = String(sh.getRange(1, 16).getValue() || '').trim();
     if (!h14) sh.getRange(1, 14).setValue(CONFIG.HEADERS[13]);
     if (!h15) sh.getRange(1, 15).setValue(CONFIG.HEADERS[14]);
+    if (!h16) sh.getRange(1, 16).setValue(CONFIG.HEADERS[15]);
   }
   return sh;
 }
@@ -357,6 +359,7 @@ function readWorksSheet_(sh, term) {
       comment: String(r[12] || ''),
       academicYear: y,
       semester: s,
+      groupId: String(r[15] || '').trim(),
       termId: term ? term.termId : (y && (s === '1' || s === '2') ? y + '_' + s : ''),
       sheetName: sheetName,
       termLabel: term ? termLabel_(term.year, term.semester) : (y && s ? termLabel_(y, s) : 'คลังเดิม (ก่อนแยกเทอม)')
@@ -399,11 +402,9 @@ function readWorksObj_(ss, yearFilter, semFilter) {
 
 /** นักเรียนส่งงาน (ไม่ต้องล็อกอิน) — ต้องระบุ academicYear + semester */
 function submitWork_(d) {
-  const fullName = String(d.fullName || '').trim();
   const subject  = String(d.subject || '').trim();
   const category = String(d.category || '').trim();
   const title    = String(d.title || '').trim();
-  const classroom = String(d.classroom || '').trim();
   let term = normalizeTerm_(d.academicYear || d.year, d.semester || d.term);
   if (!term) {
     // รองรับ Frontend เก่าที่ยังไม่ส่งปี/เทอมมา: ลงเทอมปัจจุบันอัตโนมัติ
@@ -413,26 +414,54 @@ function submitWork_(d) {
   if (!term) {
     return jsonOut_({ ok: false, error: 'กรุณาเลือก ปีการศึกษา / ภาคเรียน (1 หรือ 2) ให้ถูกต้อง' });
   }
-  if (!fullName || !classroom || !subject || !category || !title) {
-    return jsonOut_({ ok: false, error: 'กรุณาเลือก ชื่อ-สกุล / ห้อง / วิชา / ประเภทงาน / ชื่อชิ้นงาน ให้ครบ' });
+  // สมาชิก: งานเดี่ยวส่ง 1 คน, งานกลุ่มส่ง members[] หลายคน (อัปโหลดไฟล์ครั้งเดียว แตกแถวรายคน)
+  let members = [];
+  if (d.members instanceof Array && d.members.length) {
+    const seen = {};
+    d.members.forEach(function(m) {
+      const nm = String((m && (m.fullName || m.name)) || '').trim();
+      const cl = String((m && (m.classroom || m.class)) || '').trim();
+      if (!nm || !cl) return;
+      const k = nm + '||' + cl;
+      if (!seen[k]) { seen[k] = 1; members.push({ fullName: nm, classroom: cl }); }
+    });
+  } else {
+    const nm = String(d.fullName || '').trim();
+    const cl = String(d.classroom || '').trim();
+    if (nm && cl) members.push({ fullName: nm, classroom: cl });
   }
-  // กันเลือกวิชาผิดห้อง
+  if (!members.length) {
+    return jsonOut_({ ok: false, error: 'กรุณาเลือก ชื่อ-สกุล / ห้อง อย่างน้อย 1 คน' });
+  }
+  if (members.length > 10) {
+    return jsonOut_({ ok: false, error: 'กลุ่มใหญ่สุด 10 คนต่อชิ้นงาน' });
+  }
+  if (!subject || !category || !title) {
+    return jsonOut_({ ok: false, error: 'กรุณาเลือก วิชา / ประเภทงาน / ชื่อชิ้นงาน ให้ครบ' });
+  }
+  const groupId = members.length > 1
+    ? ('G' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMddHHmmss'))
+    : '';
+  // กันเลือกวิชาผิดห้อง (เช็คทุกคนในกลุ่ม — ชื่อวิชาซ้ำต่างห้องผ่านถ้าห้องใดห้องหนึ่งตรง)
   try {
     const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
     const shS = ss.getSheetByName(CONFIG.SHEET_SUBJECTS);
     if (shS && shS.getLastRow() >= 2) {
       const sv = shS.getRange(2, 1, shS.getLastRow() - 1, 2).getValues();
-      let found = false, allowed = false, allowList = [];
+      let found = false, allowList = [];
       for (let i = 0; i < sv.length; i++) {
         if (String(sv[i][0] || '').trim() === subject) {
           found = true;
           const allow = parseClasses_(sv[i][1]);
-          if (!allow.length || allow.indexOf(classroom) >= 0) { allowed = true; break; }
+          if (!allow.length) { allowList = []; break; } // วิชานี้ใช้ได้ทุกห้อง
           allowList = allowList.concat(allow.filter(function(x) { return allowList.indexOf(x) < 0; }));
         }
       }
-      if (found && !allowed) {
-        return jsonOut_({ ok: false, error: 'วิชา "' + subject + '" ไม่ได้กำหนดให้ห้อง ' + classroom + ' (กำหนดไว้: ' + allowList.join(', ') + ')' });
+      if (found && allowList.length) {
+        const bad = members.filter(function(m) { return allowList.indexOf(m.classroom) < 0; });
+        if (bad.length) {
+          return jsonOut_({ ok: false, error: 'วิชา "' + subject + '" ไม่ได้กำหนดให้ห้อง ' + bad.map(function(m) { return m.classroom; }).join(', ') + ' (กำหนดไว้: ' + allowList.join(', ') + ')' });
+        }
       }
     }
   } catch (e) { }
@@ -457,15 +486,19 @@ function submitWork_(d) {
     const fTerm = getOrCreateFolder_(fYear, 'ภาคเรียนที่ ' + term.semester);
     const sub1 = getOrCreateFolder_(fTerm, subject);
     const sub2 = getOrCreateFolder_(sub1, category);
-    const safeName = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMdd_HHmmss') + '_' + fullName + '_' + fileName;
+    const safeName = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMdd_HHmmss') + '_' + members[0].fullName + (members.length > 1 ? '_กลุ่ม' + members.length + 'คน' : '') + '_' + fileName;
     const file = sub2.createFile(blob.setName(safeName));
     try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) {}
     driveFileId = file.getId();
     fileUrl = 'https://drive.google.com/file/d/' + driveFileId + '/view';
   }
-  getWorksSheet_(term.year, term.semester).appendRow([new Date(), fullName, classroom, subject, category, title,
-    String(d.description || ''), fileKind, fileName, fileUrl, driveFileId, 'รอตรวจ', '', term.year, term.semester]);
-  return jsonOut_({ ok: true, fileUrl: fileUrl, driveFileId: driveFileId, academicYear: term.year, semester: term.semester, sheetName: term.sheetName });
+  const now = new Date();
+  const ws = getWorksSheet_(term.year, term.semester);
+  members.forEach(function(m) {
+    ws.appendRow([now, m.fullName, m.classroom, subject, category, title,
+      String(d.description || ''), fileKind, fileName, fileUrl, driveFileId, 'รอตรวจ', '', term.year, term.semester, groupId]);
+  });
+  return jsonOut_({ ok: true, fileUrl: fileUrl, driveFileId: driveFileId, academicYear: term.year, semester: term.semester, sheetName: term.sheetName, groupId: groupId, rows: members.length, isGroup: members.length > 1 });
 }
 
 /** ครูตรวจงาน (Admin เท่านั้น) — ต้องส่ง sheetName/termId/year+semester มาด้วย (ของเก่าส่งแค่ row = คลังเดิม) */
@@ -491,12 +524,33 @@ function deleteWork_(d) {
   const sh = resolveWorksSheet_(d);
   if (row > sh.getLastRow()) return jsonOut_({ ok: true, alreadyDeleted: true, row: row, sheetName: sh.getName() });
   const fileId = String(sh.getRange(row, 11).getValue() || '').trim();
-  if (fileId) {
+  // งานกลุ่มแชร์ไฟล์เดียวกัน: ลบไฟล์ใน Drive ก็ต่อเมื่อไม่มีแถวอื่นอ้างถึงแล้ว
+  const canTrash = fileId && !fileStillUsed_(sh.getName(), row, fileId);
+  if (canTrash) {
     try { DriveApp.getFileById(fileId).setTrashed(true); }
     catch (e) { }
   }
   sh.deleteRow(row);
   return jsonOut_({ ok: true, row: row, sheetName: sh.getName() });
+}
+
+/** มีแถวอื่น (ที่ไม่ใช่แถวกำลังลบ) อ้าง driveFileId นี้อยู่หรือไม่ */
+function fileStillUsed_(excludeSheetName, excludeRow, fileId) {
+  const all = allWorksSheets_();
+  for (let k = 0; k < all.length; k++) {
+    const ws = all[k].sh;
+    if (ws.getLastRow() < 2 || ws.getLastColumn() < 11) continue;
+    const n = ws.getLastRow() - 1;
+    const col = ws.getRange(2, 11, n, 1).getValues();
+    for (let i = 0; i < n; i++) {
+      if (String(col[i][0] || '').trim() === fileId) {
+        if (ws.getName() === excludeSheetName && (i + 2) === Number(excludeRow)) continue;
+        return true;
+      }
+    }
+  }
+  return false;
+}
 }
 
 /** ย้อนหลังใส่ปี/เทอมให้แถวที่ยังว่าง (Admin เท่านั้น) — แตะเฉพาะคอลัมน์ N-O ที่ว่าง ไม่แตะแถวที่มีปีแล้ว */
