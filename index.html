@@ -249,6 +249,13 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
       <h3 class="font-semibold mb-1">📅 แท็บชีตแยกตามเทอม <span id="termCount" class="text-xs text-slate-400"></span></h3>
       <p class="text-xs text-slate-400 mb-2">ชีต ผลงาน_ปี_เทอม ถูกสร้างอัตโนมัติเมื่อมีการส่งงานเทอมนั้นครั้งแรก • งานเก่าก่อนแยกเทอมอยู่ในแท็บ “ผลงาน”</p>
       <div id="termList" class="flex gap-2 flex-wrap"></div>
+      <div class="flex gap-2 flex-wrap items-center mt-3 pt-3 border-t">
+        <span class="text-xs font-semibold">🩹 งานที่ยังไม่มีปี:</span>
+        <select id="bfYear" class="border rounded-xl px-2 py-1.5 text-sm bg-white" title="ปีการศึกษา"></select>
+        <select id="bfTerm" class="border rounded-xl px-2 py-1.5 text-sm bg-white" title="ภาคเรียน"><option value="1">เทอม 1</option><option value="2">เทอม 2</option></select>
+        <button onclick="backfillTerm()" class="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs">ใส่ปี/เทอมย้อนหลัง</button>
+        <span class="text-xs text-slate-400">แตะเฉพาะแถวที่ปีว่าง • แถวที่มีปีแล้วไม่โดนเปลี่ยน</span>
+      </div>
     </div>
     <div class="grid md:grid-cols-2 gap-4">
       <div class="bg-white rounded-2xl border p-4">
@@ -328,6 +335,15 @@ function fillTermSelects(){
   }
   const ft = document.getElementById('fTerm');
   if(ft && !ft.value) ft.value = cur.semester;
+  // ช่องย้อนหลังใส่ปี (หน้า Admin): default = เทอมปัจจุบัน
+  const bfY = document.getElementById('bfYear');
+  if(bfY){
+    const keep = bfY.value;
+    bfY.innerHTML = years.map(y=>`<option value="${y}">ปี ${y}</option>`).join('');
+    bfY.value = (keep && years.includes(keep)) ? keep : (years.includes(cur.year) ? cur.year : years[years.length-1]);
+  }
+  const bfT = document.getElementById('bfTerm');
+  if(bfT && !bfT.value) bfT.value = cur.semester;
   const lbl = document.getElementById('curTermLabel');
   if(lbl) lbl.textContent = `• เทอมปัจจุบัน ${cur.year}/${cur.semester}`;
   const ti = document.getElementById('termInfo');
@@ -594,6 +610,21 @@ async function addStudent(){
 }
 async function delSubject(row){ if(!confirm('ลบวิชานี้? (งานเดิมที่ใช้วิชานี้จะไม่ถูกลบ)')) return; try{ await adminPost({action:'deleteSubject',row}); softRefresh(); }catch(e){ alert(e.message); } }
 async function delStudent(row){ if(!confirm('ลบชื่อนักเรียนนี้? (งานเดิมที่ส่งแล้วจะไม่ถูกลบ)')) return; try{ await adminPost({action:'deleteStudent',row}); softRefresh(); }catch(e){ alert(e.message); } }
+async function backfillTerm(){
+  if(!ADMIN) return alert('🔒 ต้องล็อกอิน Admin ก่อน');
+  const y = document.getElementById('bfYear')?.value || '';
+  const t = document.getElementById('bfTerm')?.value || '';
+  if(!/^\d{4}$/.test(y) || (t!=='1' && t!=='2')) return alert('เลือกปี/เทอมให้ถูกต้องก่อน');
+  if(!confirm(`ใส่ปี ${y} เทอม ${t} ให้งานทุกชิ้นที่ยังไม่มีปี?\n(แถวที่มีปีแล้วจะไม่ถูกเปลี่ยน)`)) return;
+  try{
+    const j = await adminPost({action:'backfillTerm', academicYear:y, semester:t});
+    await softRefresh();
+    alert(`✅ ใส่ปี/เทอมแล้ว ${j.updated} แถว (ตรวจ ${j.scanned} แถว ใน ${j.sheets} ชีต)\nตอนนี้กรองตามปี ${y} ได้แล้ว`);
+  }catch(e){
+    if(String(e.message||'').includes('unknown action')) alert('❌ Backend ยังเป็นตัวเก่า — Deploy Code.gs ตัวใหม่ (New version) ก่อน');
+    else alert('❌ '+e.message);
+  }
+}
 function editStudentUIByRow(row){
   const o = STUDENTS.find(s=>s.row===row); if(!o) return;
   const box = document.getElementById('stud-edit-'+row); if(!box) return;
