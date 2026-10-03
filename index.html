@@ -16,6 +16,7 @@ let SUBJECTS = ['ภาษาไทย','คณิตศาสตร์','วิ
 let STUDENTS = [];
 let TERMS = []; // [{year, semester, termId, sheetName}] จาก backend
 let CURRENT_TERM = null; // {year, semester}
+const BACKEND_VERSION = 'term-3'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
 const CATEGORIES = [
   { name:'ใบงาน', icon:'📝', color:'from-amber-400 to-orange-500' },
   { name:'โครงงาน', icon:'🔬', color:'from-emerald-400 to-teal-600' },
@@ -72,6 +73,7 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
 </header>
 
 <main class="max-w-7xl mx-auto px-4 py-6">
+<div id="verBanner" class="hidden mb-4"><div class="bg-red-50 border border-red-300 text-red-700 rounded-2xl p-3 text-sm">⚠️ <b>Backend ยังเป็นเวอร์ชันเก่า</b> — งานที่ส่งจะไม่บันทึกปี/เทอม และกรองตามปีไม่ได้<br>แก้: วาง <b>Code.gs</b> ตัวใหม่ทับใน Apps Script > Save > รัน <b>setupSheet()</b> 1 ครั้ง > Deploy > Manage deployments > Edit > <b>Version: New version</b> > Deploy แล้วกดรีเฟรชหน้านี้</div></div>
 
 <!-- ============ DASHBOARD ============ -->
 <section id="page-dashboard" class="tabpage active">
@@ -493,6 +495,10 @@ function applyBootData(j){
   if(j.subjects?.length) SUBJECTS = j.subjects;
   if(j.subjectRows) SUBJECT_ROWS = j.subjectRows.map(o=>({row:o.row, name:o.name, classrooms:o.classrooms||[]}));
   if(j.students) STUDENTS = j.students||[];
+  // เช็คเวอร์ชัน backend: ไม่ตรง = ยังรันโค้ดเก่า (ไม่มีปี/เทอม) ให้ขึ้นแถบแดงเตือนทันที
+  const verOk = j && j.version === BACKEND_VERSION;
+  const vb = document.getElementById('verBanner');
+  if(vb) vb.classList.toggle('hidden', !!verOk);
 }
 // โหลดครั้งแรก: ใช้ action=init ครั้งเดียว (เร็ว ~ครึ่งหนึ่ง) ถ้า backend เก่าให้ fallback 2 calls แบบขนาน
 async function loadData(){
