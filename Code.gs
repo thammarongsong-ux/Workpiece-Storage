@@ -24,6 +24,7 @@ const CONFIG = {
   SHEET_STUDENTS: 'นักเรียน',
   ADMIN_USER: 'FirstStar',
   ADMIN_PASS: '574001',
+  VERSION: 'term-3', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
   HEADERS: [
     'Timestamp','ชื่อ-สกุล','ชั้น/ห้อง','วิชา','ประเภทงาน','ชื่อชิ้นงาน',
     'คำอธิบาย','ชนิดไฟล์','ชื่อไฟล์','File URL','Drive File ID','สถานะตรวจ','ความเห็นครู',
@@ -197,6 +198,7 @@ function allWorksSheets_() {
 }
 
 function jsonOut_(obj) {
+  try { if (obj && typeof obj === 'object' && !obj.version) obj.version = CONFIG.VERSION; } catch (e) {}
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
