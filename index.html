@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Workpiece Storage | ระบบเก็บชิ้นงาน (แยกปี/เทอม)</title>
+<link rel="icon" type="image/png" href="logo.png">
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script>
@@ -51,7 +52,7 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
 <!-- HEADER -->
 <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
   <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
-    <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white grid place-items-center text-2xl shadow">🎒</div>
+    <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white grid place-items-center text-2xl shadow overflow-hidden relative shrink-0"><span>🎒</span><img src="logo.png" alt="โลโก้ Workpiece Storage" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()"></div>
     <div class="flex-1">
       <h1 class="font-bold text-lg leading-tight">Workpiece Storage <span class="text-blue-600">• เก็บชิ้นงาน</span></h1>
       <p class="text-xs text-slate-500">Drive + Google Sheet อัตโนมัติ • แยกปีการศึกษา/ภาคเรียน <span id="curTermLabel" class="font-semibold text-indigo-600"></span></p>
