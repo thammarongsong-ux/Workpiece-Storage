@@ -551,7 +551,6 @@ function fileStillUsed_(excludeSheetName, excludeRow, fileId) {
   }
   return false;
 }
-}
 
 /** ย้อนหลังใส่ปี/เทอมให้แถวที่ยังว่าง (Admin เท่านั้น) — แตะเฉพาะคอลัมน์ N-O ที่ว่าง ไม่แตะแถวที่มีปีแล้ว */
 function backfillTerm_(d) {
