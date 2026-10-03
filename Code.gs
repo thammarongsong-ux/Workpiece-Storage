@@ -258,6 +258,7 @@ function doPost(e) {
     }
     if (data.action === 'updateStatus') return updateStatus_(data);
     if (data.action === 'deleteWork') return deleteWork_(data);
+    if (data.action === 'backfillTerm') return backfillTerm_(data);
     if (data.action === 'addSubject') return addSubject_(data);
     if (data.action === 'editSubject') return editSubject_(data);
     if (data.action === 'deleteSubject') return deleteSubject_(data);
@@ -496,6 +497,34 @@ function deleteWork_(d) {
   }
   sh.deleteRow(row);
   return jsonOut_({ ok: true, row: row, sheetName: sh.getName() });
+}
+
+/** ย้อนหลังใส่ปี/เทอมให้แถวที่ยังว่าง (Admin เท่านั้น) — แตะเฉพาะคอลัมน์ N-O ที่ว่าง ไม่แตะแถวที่มีปีแล้ว */
+function backfillTerm_(d) {
+  if (!isAdmin_(d)) return jsonOut_({ ok: false, error: 'ต้องล็อกอิน Admin ก่อน' });
+  const term = normalizeTerm_(d.academicYear || d.year, d.semester || d.term);
+  if (!term) return jsonOut_({ ok: false, error: 'กรุณาระบุ ปีการศึกษา / ภาคเรียน ให้ถูกต้อง' });
+  const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
+  let updated = 0, sheets = 0, scanned = 0;
+  allWorksSheetsOf_(ss).forEach(function(o) {
+    const ws = o.sh;
+    ensureHeaders_(ws);
+    if (ws.getLastRow() < 2) return;
+    sheets++;
+    const n = ws.getLastRow() - 1;
+    // ชีตรายเทอมใช้ปี/เทอมของชีตนั้น, ชีตคลังเดิมใช้ค่าที่ Admin ระบุ
+    const y = o.term ? o.term.year : term.year;
+    const s = o.term ? o.term.semester : term.semester;
+    const range = ws.getRange(2, 14, n, 2);
+    const vals = range.getValues();
+    let dirty = false;
+    for (let i = 0; i < n; i++) {
+      scanned++;
+      if (!String(vals[i][0] || '').trim()) { vals[i][0] = y; vals[i][1] = s; updated++; dirty = true; }
+    }
+    if (dirty) range.setValues(vals); // เขียนครั้งเดียวต่อชีต
+  });
+  return jsonOut_({ ok: true, updated: updated, scanned: scanned, sheets: sheets, academicYear: term.year, semester: term.semester });
 }
 
 /** เพิ่มวิชา (Admin) */
