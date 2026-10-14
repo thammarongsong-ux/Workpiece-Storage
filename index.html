@@ -69,6 +69,7 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
     <button data-tab="submit" class="navbtn whitespace-nowrap px-4 py-2 rounded-xl bg-slate-100 text-sm font-medium">📤 ส่งงาน</button>
     <button data-tab="summary" class="navbtn whitespace-nowrap px-4 py-2 rounded-xl bg-slate-100 text-sm font-medium">📈 สรุปชิ้นงาน</button>
     <button data-tab="check" class="navbtn whitespace-nowrap px-4 py-2 rounded-xl bg-slate-100 text-sm font-medium">✅ ตรวจงาน</button>
+    <button id="navTeacher" data-tab="teacher" style="display:none" class="navbtn whitespace-nowrap px-4 py-2 rounded-xl bg-slate-100 text-sm font-medium">👩‍🏫 งานของฉัน</button>
     <button data-tab="admin" class="navbtn whitespace-nowrap px-4 py-2 rounded-xl bg-slate-100 text-sm font-medium">🔐 Admin</button>
   </nav>
 </header>
@@ -235,6 +236,28 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
   <div id="chkCount" class="text-sm text-slate-500 mb-2"></div>
   <div id="chkList" class="space-y-3"></div>
   <div class="text-center mt-4"><button id="chkMore" onclick="chkShowMore()" class="hidden px-5 py-2 rounded-xl bg-slate-900 text-white text-sm">โหลดเพิ่ม ↓</button></div>
+</section>
+
+<!-- ============ TEACHER (แดชบอร์ดครูรายบุคคล) ============ -->
+<section id="page-teacher" class="tabpage">
+  <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+    <div>
+      <h2 class="text-2xl font-bold">👩‍🏫 งานของฉัน <span id="teacherDashName" class="text-sm font-normal text-slate-500"></span></h2>
+      <p class="text-sm text-slate-500">เฉพาะวิชาที่คุณสอน • เลือกนักเรียนเป็นรายคนแล้วตรวจทีละชิ้นได้</p>
+    </div>
+    <div class="flex gap-2 flex-wrap items-center">
+      <select id="tDashClass" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกห้อง</option></select>
+      <select id="tDashStudent" class="border rounded-xl px-3 py-2 text-sm bg-white max-w-[220px]"><option value="">— เลือกนักเรียน —</option></select>
+    </div>
+  </div>
+  <div id="tDashSubjects" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"></div>
+  <div class="grid lg:grid-cols-5 gap-4">
+    <div class="lg:col-span-2 bg-white rounded-2xl border p-4">
+      <h3 class="font-semibold mb-2">🧑‍🎓 ส่งงานรายคน <span id="tDashStudCount" class="text-xs text-slate-400"></span></h3>
+      <div id="tDashStudents" class="space-y-1.5 max-h-[520px] overflow-auto"></div>
+    </div>
+    <div class="lg:col-span-3"><div id="tDashDetail" class="space-y-3"></div></div>
+  </div>
 </section>
 
 <!-- ============ ADMIN ============ -->
@@ -527,6 +550,8 @@ function goAdmin(){ document.querySelector('[data-tab="admin"]').click(); }
 function refreshAdminUI(){
   const on = !!ADMIN;
   const admin = isAdmin();
+  const nt = document.getElementById('navTeacher'); if(nt) nt.style.display = isTeacher() ? '' : 'none';
+  if(!on && ACTIVE_TAB==='teacher'){ document.querySelector('[data-tab="dashboard"]').click(); return; }
   document.getElementById('loginBox').classList.toggle('hidden', on);
   document.getElementById('adminPanel').classList.toggle('hidden', !on);
   document.getElementById('adminBtn').textContent = on ? ('✅ ' + (ADMIN.name || ADMIN.user) + (isTeacher() ? ' (ครู)' : '')) : '🔐 Admin';
@@ -553,6 +578,7 @@ function refreshAdminUI(){
     if(ACTIVE_TAB==='admin' && admin) { renderAdminLists(); loadTeachers(); }
   }
   if(ACTIVE_TAB==='check') renderCheck();
+  if(ACTIVE_TAB==='teacher') renderTeacherDash();
 }
 
 document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>{document.querySelectorAll('.navbtn').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.tabpage').forEach(p=>p.classList.remove('active'));document.getElementById('page-'+b.dataset.tab).classList.add('active');ACTIVE_TAB=b.dataset.tab;renderActive();window.scrollTo({top:0,behavior:'smooth'});});
@@ -898,6 +924,7 @@ function renderActive(){
   else if(ACTIVE_TAB==='padlet') renderPadlet();
   else if(ACTIVE_TAB==='summary') renderSummary();
   else if(ACTIVE_TAB==='check') renderCheck();
+  else if(ACTIVE_TAB==='teacher') renderTeacherDash();
   else if(ACTIVE_TAB==='admin' && isAdmin()) { renderAdminLists(); loadTeachers(); }
   document.getElementById('ftotal').textContent='ทั้งหมด '+ALL.length+' ชิ้น ('+TERMS.length+' เทอม + คลังเดิม)';
 }
@@ -1145,18 +1172,19 @@ function renderCheck(){
   const more = document.getElementById('chkMore');
   if(more){ more.classList.toggle('hidden', rows.length <= CHK_LIMIT); more.textContent = `โหลดเพิ่ม ↓ (แสดง ${show.length}/${rows.length})`; }
 }
-async function setStatus(sheetName,row,status,btn){
+async function setStatus(sheetName,row,status,btn,cmtPrefix){
   if(!ADMIN) return alert('🔒 ต้องล็อกอินครู/Admin ก่อน');
   const ref0 = ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row));
   if(ref0 && !canGradeSubject(ref0.subject)) return alert('🔒 วิชา "'+ref0.subject+'" ไม่ใช่ของคุณ (คุณตรวจได้: '+teacherSubjects().join(', ')+')');
   if(btn){ if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true; }
-  const cmt=(document.getElementById('cmt-'+sheetName+'-'+row)?.value||'');
+  const cmt=(document.getElementById((cmtPrefix||'cmt-')+sheetName+'-'+row)?.value||'');
   const ref = ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row));
   try{
     const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'updateStatus',row,status,comment:cmt,sheetName,expectFullName:ref?ref.fullName:'',expectTitle:ref?ref.title:'',...(ref?termKeys(ref):{}),...adminAuth()})});
     const j=await res.json(); if(!j.ok){ const e2=new Error(j.error); e2.stale=!!j.stale; throw e2; }
     const it=ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row)); if(it){it.status=status;it.comment=cmt;}
-    renderCheck(); // อัปเดตเฉพาะหน้านี้ ไม่โหลดใหม่ทั้งระบบ
+    if(ACTIVE_TAB==='teacher') renderTeacherDash();
+    else renderCheck(); // อัปเดตเฉพาะหน้านี้ ไม่โหลดใหม่ทั้งระบบ
     if(ACTIVE_TAB==='dashboard') renderDash();
   }catch(e){ if(e.stale){ try{await softRefresh();}catch(_){} } alert((e.stale?'🔄 ':'')+'บันทึกไม่สำเร็จ: '+e.message); }
   if(btn){ btn.dataset.busy='0'; btn.disabled=false; }
@@ -1175,7 +1203,81 @@ async function delWork(sheetName,row){
   }catch(e){ if(e.stale){ try{await softRefresh();}catch(_){} } alert((e.stale?'🔄 ':'')+'ลบไม่สำเร็จ: '+e.message); }
 }
 
-// ตัวเลือกดูข้อมูลทุกหน้าเรียง [ชั้น → ชื่อ → วิชา]: เลือกชั้นแล้วชื่อ/วิชาเหลือเฉพาะห้องนั้น
+// ===== TEACHER DASHBOARD (แดชบอร์ดวิชา + ส่งงานรายคน + ตรวจรายบุคคล) =====
+let T_DASH_LIST = []; // รายชื่อนักเรียนที่มีงานในวิชาครู [{name, classroom, total, wait, pass, fix}]
+function teacherRows(){ const s = teacherSubjects(); return ALL.filter(r=>s.includes(String(r.subject||''))); }
+function renderTeacherDash(){
+  const box = document.getElementById('tDashDetail');
+  if(!isTeacher()){ if(box) box.innerHTML='<p class="text-sm text-slate-400 bg-white rounded-2xl border p-4">หน้านี้สำหรับบัญชีครู — กรุณาล็อกอินด้วยบัญชีครูที่หน้า 🔐 Admin</p>'; return; }
+  document.getElementById('teacherDashName').textContent = '• ' + (ADMIN.name || ADMIN.user);
+  const rows = teacherRows();
+  // การ์ดสรุปรายวิชาที่สอน
+  document.getElementById('tDashSubjects').innerHTML = teacherSubjects().map(s=>{
+    const rs = rows.filter(r=>r.subject===s);
+    const wait = rs.filter(r=>r.status==='รอตรวจ').length;
+    return `<div class="bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl p-4"><div class="font-semibold text-sm">📚 ${esc(s)}</div><div class="text-2xl font-bold mt-1">${rs.length} <span class="text-sm font-normal opacity-80">ชิ้น</span></div><div class="text-xs opacity-90 mt-1">⏳ รอตรวจ ${wait} ชิ้น</div></div>`;
+  }).join('') || '<p class="text-sm text-slate-400">บัญชีนี้ยังไม่มีวิชาที่กำหนด ติดต่อ Admin</p>';
+  // ตัวกรองห้อง (จากห้องที่มีงานในวิชาครูจริง)
+  const clEl = document.getElementById('tDashClass');
+  const keepCl = clEl.value;
+  const rooms = uniq(rows.map(r=>r.classroom));
+  clEl.innerHTML = '<option value="">ทุกห้อง</option>' + rooms.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('');
+  if(rooms.includes(keepCl)) clEl.value = keepCl;
+  const cls = clEl.value;
+  // สรุปส่งงานรายคน
+  const m = Object.create(null);
+  rows.filter(r=>!cls || r.classroom===cls).forEach(r=>{
+    const k = r.fullName + '||' + r.classroom;
+    if(!m[k]) m[k] = {name:r.fullName, classroom:r.classroom, total:0, wait:0, pass:0, fix:0};
+    const o = m[k]; o.total++;
+    if(r.status==='รอตรวจ') o.wait++; else if(r.status==='ผ่าน') o.pass++; else if(r.status==='ต้องแก้ไข') o.fix++;
+  });
+  T_DASH_LIST = Object.values(m).sort((a,b)=> b.wait-a.wait || b.total-a.total || a.name.localeCompare(b.name,'th'));
+  document.getElementById('tDashStudCount').textContent = `(${T_DASH_LIST.length} คน)`;
+  // dropdown นักเรียน (คงค่าที่เลือกไว้ถ้ายังอยู่)
+  const stEl = document.getElementById('tDashStudent');
+  const keepSt = stEl.value;
+  stEl.innerHTML = '<option value="">— เลือกนักเรียน —</option>' + T_DASH_LIST.map(o=>{
+    const k = o.name + '||' + o.classroom;
+    return `<option value="${esc(k)}">${esc(o.name)} (${esc(o.classroom)}) • ⏳${o.wait}/${o.total}</option>`;
+  }).join('');
+  if(T_DASH_LIST.some(o=>(o.name+'||'+o.classroom)===keepSt)) stEl.value = keepSt;
+  document.getElementById('tDashStudents').innerHTML = T_DASH_LIST.map((o,i)=>
+    `<button onclick="pickTeacherStudentByIdx(${i})" class="w-full text-left border rounded-xl px-3 py-2 text-sm ${(o.name+'||'+o.classroom)===stEl.value?'border-blue-600 bg-blue-50':'hover:bg-slate-50'}"><div class="flex justify-between gap-2"><span class="font-medium">👦 ${esc(o.name)}</span><span class="text-xs text-slate-400 shrink-0">${esc(o.classroom)}</span></div><div class="text-xs mt-1 ${o.wait?'text-amber-600 font-semibold':'text-slate-400'}">รวม ${o.total} ชิ้น • ⏳ ${o.wait} • ✅ ${o.pass} • ✏️ ${o.fix}</div></button>`
+  ).join('') || '<p class="text-xs text-slate-400">ยังไม่มีงานในวิชาของคุณ</p>';
+  renderTeacherStudentDetail();
+}
+function pickTeacherStudentByIdx(i){
+  const o = T_DASH_LIST[i]; if(!o) return;
+  document.getElementById('tDashStudent').value = o.name + '||' + o.classroom;
+  renderTeacherDash();
+}
+function renderTeacherStudentDetail(){
+  const box = document.getElementById('tDashDetail'); if(!box) return;
+  const key = document.getElementById('tDashStudent')?.value || '';
+  if(!key){ box.innerHTML = '<p class="text-sm text-slate-400 bg-white rounded-2xl border p-4">👈 เลือกนักเรียนจากรายชื่อหรือ dropdown เพื่อดูและตรวจงานเป็นรายชิ้น</p>'; return; }
+  const sep = key.indexOf('||');
+  const nm = key.slice(0, sep), cl = key.slice(sep + 2);
+  const rows = teacherRows().filter(r=>r.fullName===nm && r.classroom===cl);
+  const wait = rows.filter(r=>r.status==='รอตรวจ').length;
+  box.innerHTML = `<div class="bg-white rounded-2xl border p-4"><p class="font-semibold">👦 ${esc(nm)} <span class="text-sm font-normal text-slate-400">(${esc(cl)})</span></p><p class="text-xs text-slate-500 mt-0.5">ทั้งหมด ${rows.length} ชิ้น • ⏳ รอตรวจ ${wait} ชิ้น (ใหม่สุดก่อน)</p></div>` + (rows.map(r=>{
+    const th = thumb(r);
+    return `<div class="bg-white rounded-2xl border p-4 flex flex-col md:flex-row gap-4">
+      <div class="md:w-36 shrink-0">${th?`<img src="${th}" loading="lazy" decoding="async" class="w-full h-24 object-cover rounded-xl" alt="">`:`<div class="w-full h-24 rounded-xl bg-slate-100 grid place-items-center text-3xl">${fileIcon(r.fileKind)}</div>`}</div>
+      <div class="flex-1">
+        <p class="font-semibold text-sm">${esc(r.title)} ${statusBadge(r.status)} ${termBadge(r)}</p>
+        <p class="text-xs text-slate-500">📚 ${esc(r.subject)} • 📂 ${esc(r.category)} • ${esc(r.timestamp)}</p>
+        ${r.description?`<p class="text-sm mt-1 text-slate-600">${esc(r.description)}</p>`:''}
+        ${r.comment?`<p class="text-xs mt-2 bg-yellow-50 border border-yellow-200 rounded-lg p-2">💬 ครู: ${esc(r.comment)}</p>`:''}
+        <a href="${safeUrl(r.fileUrl)}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline">เปิดไฟล์ต้นฉบับ →</a>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <input id="tcmt-${esc(r.sheetName||'')}-${r.row}" value="${esc(r.comment||'')}" placeholder="💬 ความเห็นครู..." class="border rounded-xl px-3 py-1.5 text-sm flex-1 min-w-[160px]">
+          <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ผ่าน',this,'tcmt-')" class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-sm disabled:opacity-50">✅ ผ่าน</button>
+          <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ต้องแก้ไข',this,'tcmt-')" class="px-3 py-1.5 rounded-xl bg-red-500 text-white text-sm disabled:opacity-50">✏️ แก้ไข</button>
+        </div>
+      </div></div>`;
+  }).join('') || '<p class="text-sm text-slate-400">คนนี้ยังไม่มีงานในวิชาของคุณ</p>');
+}
 function smartAutoClass(nameId, classId){
   const nm = document.getElementById(nameId)?.value || '';
   if(!nm) return;
@@ -1202,6 +1304,8 @@ wirePair('dashClass','dashName','dashSubject',renderDash);
 wirePair('padClass','padName','padSubject',renderPadlet);
 wirePair('sumClass','sumName','sumSubject',renderSummary);
 wirePair('chkClass','chkName','chkSubject',renderCheck);
+document.getElementById('tDashClass').onchange = ()=>{ renderTeacherDash(); };
+document.getElementById('tDashStudent').onchange = ()=>{ renderTeacherStudentDetail(); };
 const dDash = debounce(()=>{ resetPageLimit(renderDash); renderDash(); }, 250);
 const dPad = debounce(()=>{ PAD_LIMIT=PAD_STEP; renderPadlet(); }, 250);
 const dSum = debounce(()=>{ SUM_LIMIT=SUM_STEP; renderSummary(); }, 250);
