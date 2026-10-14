@@ -26,7 +26,7 @@ let SUBJECTS = ['ภาษาไทย','คณิตศาสตร์','วิ
 let STUDENTS = [];
 let TERMS = []; // [{year, semester, termId, sheetName}] จาก backend
 let CURRENT_TERM = null; // {year, semester}
-const BACKEND_VERSION = 'term-12'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
+const BACKEND_VERSION = 'term-13'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
 const CATEGORIES = [
   { name:'ใบงาน', icon:'📝', color:'from-amber-400 to-orange-500' },
   { name:'โครงงาน', icon:'🔬', color:'from-emerald-400 to-teal-600' },
@@ -262,6 +262,8 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
         <div><label class="text-xs font-medium">วิชา *</label><select id="asgSubject" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm bg-white"></select></div>
         <div class="md:col-span-3"><label class="text-xs font-medium">ชื่องานที่สั่ง *</label><input id="asgTitle" placeholder="เช่น แบบฝึกหัดบทที่ 3 ข้อ 1-10" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm"></div>
         <div class="md:col-span-4"><label class="text-xs font-medium">คำอธิบาย/วิธีทำ</label><textarea id="asgDesc" rows="2" placeholder="อธิบายงาน คำสั่ง เกณฑ์คะแนน..." class="mt-1 w-full border rounded-xl px-2 py-2 text-sm"></textarea></div>
+        <div class="md:col-span-2"><label class="text-xs font-medium">🎯 ภารกิจการเรียนรู้ <span class="font-normal text-slate-400">(บรรทัดละ 1 ข้อ)</span></label><textarea id="asgMissions" rows="2" placeholder="เช่น&#10;1. อ่านบทที่ 3&#10;2. สรุปเป็น mindmap&#10;3. ถ่ายรูปส่ง" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm"></textarea></div>
+        <div class="md:col-span-2"><label class="text-xs font-medium">📦 ผลงานที่ต้องส่ง <span class="font-normal text-slate-400">(บรรทัดละ 1 อย่าง)</span></label><textarea id="asgDeliver" rows="2" placeholder="เช่น&#10;รูปภาพ 1 ใบ&#10;คำบรรยายใต้ภาพ" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm"></textarea></div>
         <div><label class="text-xs font-medium">📅 วันที่สั่ง</label><input id="asgAssigned" type="datetime-local" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm bg-white"></div>
         <div><label class="text-xs font-medium">⏰ กำหนดส่ง</label><input id="asgDue" type="datetime-local" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm bg-white"></div>
         <div class="flex items-end gap-2">
@@ -744,6 +746,15 @@ function avgScore(list){
 }
 // ---------- ใบสั่งงาน ----------
 function asgById(id){ return ASSIGNMENTS.find(a=>String(a.id)===String(id || '')) || null; }
+function asgLines(t){ return String(t || '').split('\n').map(s=>s.trim()).filter(Boolean); }
+function cleanMission(m){ return String(m || '').replace(/^\d+[.)]\s*/, ''); }
+// นับถอยหลังกำหนดส่ง: "เหลือ 3 วัน 5 ชม." / "เลยมาแล้ว 1 วัน"
+function dueCountdown(dueMs){
+  const diff = dueMs - Date.now(), ad = Math.abs(diff);
+  const d = Math.floor(ad / 86400000), h = Math.floor(ad % 86400000 / 3600000), m = Math.floor(ad % 3600000 / 60000);
+  const s = (d ? d + ' วัน ' : '') + (h ? h + ' ชม. ' : '') + (!d && !h ? m + ' นาที' : '');
+  return diff >= 0 ? ('เหลือ ' + (s.trim() || 'ไม่กี่นาที')) : ('เลยมาแล้ว ' + (s.trim() || 'ไม่กี่นาที'));
+}
 function myAssignSubjects(){
   if(isAdmin()) return [...SUBJECTS];
   if(isTeacher()) return teacherSubjects().filter(s=>SUBJECTS.includes(s));
@@ -1630,8 +1641,16 @@ function updateAssignInfo(){
   const info = document.getElementById('assignInfo'); if(!info) return;
   const a = asgById(document.getElementById('fAssign').value);
   if(!a){ info.textContent = ''; return; }
-  const late = a.dueAt && parseDue(a.dueAt) && Date.now() > parseDue(a.dueAt);
-  info.innerHTML = `📌 ${esc(a.title)} • ${esc(a.subject)}${a.dueAt?` • กำหนดส่ง ${esc(fmtDue(a.dueAt))}`:''}${late?' • <b class="text-red-600">เลยกำหนดแล้ว (ยังส่งได้)</b>':''}${!a.active?' • <b class="text-red-600">ปิดรับแล้ว — ส่งจะถูกปฏิเสธ</b>':''}`;
+  const dueMs = parseDue(a.dueAt);
+  const late = a.dueAt && dueMs && Date.now() > dueMs;
+  const ms = asgLines(a.missions), dl = asgLines(a.deliverables);
+  info.innerHTML = `📌 <b>${esc(a.title)}</b> • ${esc(a.subject)}`
+    + (a.dueAt ? ` • ⏰ กำหนดส่ง ${esc(fmtDue(a.dueAt))}${dueMs ? ` (${esc(dueCountdown(dueMs))})` : ''}` : '')
+    + (late ? ` • <b class="text-red-600">เลยกำหนดแล้ว (ยังส่งได้)</b>` : '')
+    + (!a.active ? ` • <b class="text-red-600">ปิดรับแล้ว — ส่งจะถูกปฏิเสธ</b>` : '')
+    + (a.description ? `<br><span class="text-slate-500">${esc(a.description)}</span>` : '')
+    + (ms.length ? `<br>🎯 ภารกิจ: ${ms.map((m,i)=>`${i+1}) ${esc(cleanMission(m))}`).join(' • ')}` : '')
+    + (dl.length ? `<br>📦 ต้องส่ง: ${esc(dl.join(' + '))}` : '');
 }
 function onAssignChange(){
   const a = asgById(document.getElementById('fAssign').value);
@@ -1681,6 +1700,8 @@ function renderAssignBlock(){
       </div>
       <p class="text-xs text-slate-500 mt-1">📅 สั่ง ${esc(fmtDue(a.assignedAt)||'—')} • ⏰ ส่ง ${esc(fmtDue(a.dueAt)||'—')} • โดย ${esc(a.createdBy||'')} • ส่งแล้ว ${works.length} ชิ้น (ตรวจแล้ว ${graded})</p>
       ${a.description?`<p class="text-xs mt-1 text-slate-600">${esc(a.description)}</p>`:''}
+      ${asgLines(a.missions).length?`<ol class="text-xs mt-1 text-slate-600 list-decimal ml-5"><span class="font-semibold">🎯 ภารกิจการเรียนรู้:</span>${asgLines(a.missions).map(m=>`<li>${esc(cleanMission(m))}</li>`).join('')}</ol>`:''}
+      ${asgLines(a.deliverables).length?`<p class="text-xs mt-1 text-slate-600">📦 <b>ผลงานที่ต้องส่ง:</b> ${esc(asgLines(a.deliverables).join(' + '))}</p>`:''}
     </div>`;
   }).join('') || '<p class="text-xs text-slate-400">ยังไม่มีใบสั่งงาน — กด “＋ สั่งงานใหม่” ด้านบน</p>';
 }
@@ -1692,15 +1713,17 @@ async function saveAssignment(btn){
   const assignedAt = document.getElementById('asgAssigned').value.replace('T',' ');
   const dueAt = document.getElementById('asgDue').value.replace('T',' ');
   const active = document.getElementById('asgActive').checked ? '1' : '0';
+  const missions = document.getElementById('asgMissions').value.trim();
+  const deliverables = document.getElementById('asgDeliver').value.trim();
   if(!subject || !title) return alert('กรุณาเลือกวิชา + กรอกชื่องานที่สั่ง');
   if(btn){ if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true; }
   try{
     if(EDIT_ASG_ID){
       const cur = asgById(EDIT_ASG_ID);
       if(!cur) throw new Error('ไม่พบใบสั่งงานนี้แล้ว');
-      await adminPost({action:'editAssignment', row:cur.row, subject, title, description, assignedAt, dueAt, active});
+      await adminPost({action:'editAssignment', row:cur.row, subject, title, description, assignedAt, dueAt, active, missions, deliverables});
     }else{
-      await adminPost({action:'addAssignment', subject, title, description, assignedAt, dueAt, active});
+      await adminPost({action:'addAssignment', subject, title, description, assignedAt, dueAt, active, missions, deliverables});
     }
     clearAssignForm(); await softRefresh(); renderAssignBlock(); fillChkAssign();
     alert('✅ บันทึกใบสั่งงานแล้ว');
@@ -1709,7 +1732,7 @@ async function saveAssignment(btn){
 }
 function clearAssignForm(){
   EDIT_ASG_ID = null;
-  ['asgTitle','asgDesc','asgAssigned','asgDue'].forEach(id=>{document.getElementById(id).value='';});
+  ['asgTitle','asgDesc','asgAssigned','asgDue','asgMissions','asgDeliver'].forEach(id=>{document.getElementById(id).value='';});
   document.getElementById('asgActive').checked = true;
   document.getElementById('assignForm').classList.add('hidden');
   document.getElementById('assignCancelBtn').classList.add('hidden');
@@ -1724,6 +1747,8 @@ function editAssignUI(id){
   document.getElementById('asgDesc').value = a.description || '';
   document.getElementById('asgAssigned').value = String(a.assignedAt||'').replace(' ','T').slice(0,16);
   document.getElementById('asgDue').value = String(a.dueAt||'').replace(' ','T').slice(0,16);
+  document.getElementById('asgMissions').value = a.missions || '';
+  document.getElementById('asgDeliver').value = a.deliverables || '';
   document.getElementById('asgActive').checked = a.active;
   document.getElementById('assignForm').classList.remove('hidden');
   document.getElementById('assignCancelBtn').classList.remove('hidden');
@@ -1738,7 +1763,7 @@ async function delAssign(id){
 }
 async function toggleAssignActive(id){
   const a = asgById(id); if(!a) return;
-  try{ await adminPost({action:'editAssignment', row:a.row, subject:a.subject, title:a.title, description:a.description||'', assignedAt:a.assignedAt||'', dueAt:a.dueAt||'', active:a.active?'0':'1'}); await softRefresh(); renderAssignBlock(); fillChkAssign(); }
+  try{ await adminPost({action:'editAssignment', row:a.row, subject:a.subject, title:a.title, description:a.description||'', assignedAt:a.assignedAt||'', dueAt:a.dueAt||'', active:a.active?'0':'1', missions:a.missions||'', deliverables:a.deliverables||''}); await softRefresh(); renderAssignBlock(); fillChkAssign(); }
   catch(e){ alert('❌ '+e.message); }
 }
 
