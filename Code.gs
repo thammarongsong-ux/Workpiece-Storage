@@ -28,7 +28,7 @@ const CONFIG = {
   ASSIGN_HEADERS: ['รหัสงาน', 'วิชา', 'ชื่อชิ้นงาน', 'คำอธิบาย', 'วันที่สั่ง', 'กำหนดส่ง', 'ผู้สั่ง', 'เปิดรับ'],
   ADMIN_USER: 'FirstStar',
   ADMIN_PASS: '574001',
-  VERSION: 'term-10', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
+  VERSION: 'term-12', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
   HEADERS: [
     'Timestamp','ชื่อ-สกุล','ชั้น/ห้อง','วิชา','ประเภทงาน','ชื่อชิ้นงาน',
     'คำอธิบาย','ชนิดไฟล์','ชื่อไฟล์','File URL','Drive File ID','สถานะตรวจ','ความเห็นครู',
@@ -115,7 +115,10 @@ function ensureHeaders_(sh) {
   }
   const width = sh.getLastColumn();
   if (width < CONFIG.HEADERS.length) {
-    sh.getRange(1, 1, 1, CONFIG.HEADERS.length).setValues([CONFIG.HEADERS]);
+    // เติมเฉพาะหัวที่ขาดต่อท้าย ไม่เขียนทับหัวเดิมที่ผู้ใช้อาจแก้ชื่อไว้
+    for (let c = width + 1; c <= CONFIG.HEADERS.length; c++) {
+      try { sh.getRange(1, c).setValue(CONFIG.HEADERS[c - 1]); } catch (e) {}
+    }
   } else {
     // เติมเฉพาะหัวที่ขาด (คอลัมน์ 14-18) กันทับหัวเดิมที่ผู้ใช้อาจแก้
     const h14 = String(sh.getRange(1, 14).getValue() || '').trim();
@@ -175,8 +178,11 @@ function listTermSheets_() {
 function resolveWorksSheet_(d) {
   const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
   if (d && d.sheetName) {
-    const sh = ss.getSheetByName(String(d.sheetName));
-    if (sh) return sh;
+    const want = String(d.sheetName);
+    const sh = ss.getSheetByName(want);
+    // ระบุชีตมาชัดเจนแต่หาไม่เจอ = ห้ามตกไปชีตอื่นเงียบๆ (กันเขียน/ลบผิดชีต) ให้ caller แจ้ง error
+    if (!sh) throw new Error('ไม่พบชีต ' + want + ' (อาจถูกลบ/เปลี่ยนชื่อไปแล้ว) กรุณากดรีเฟรชแล้วทำใหม่');
+    return sh;
   }
   if (d && d.termId) {
     const m = /^(\d{4})_([12])$/.exec(String(d.termId));
@@ -243,14 +249,38 @@ function findTeacher_(user, pass) {
 }
 
 /** ล็อกอิน: admin ก่อน, ไม่ใช่ค่อยหาชีตครู — ไม่เปิดเผยว่า user ผิดหรือ pass ผิด */
+function loginThrottleKey_(d) {
+  return 'lf_' + String((d && d.adminUser) || '').trim().slice(0, 60);
+}
+function loginBlocked_(d) {
+  try {
+    const n = Number(CacheService.getScriptCache().get(loginThrottleKey_(d)) || 0);
+    return n >= 15;
+  } catch (e) { return false; }
+}
+function loginFail_(d) {
+  try {
+    const c = CacheService.getScriptCache(), k = loginThrottleKey_(d);
+    c.put(k, String(Number(c.get(k) || 0) + 1), 600);
+  } catch (e) {}
+}
+function loginOkReset_(d) {
+  try { CacheService.getScriptCache().remove(loginThrottleKey_(d)); } catch (e) {}
+}
 function login_(d) {
+  if (loginBlocked_(d)) {
+    return jsonOut_({ ok: false, error: 'พยายามล็อกอินผิดหลายครั้ง กรุณารอ 10 นาทีแล้วลองใหม่' });
+  }
   if (isAdmin_(d)) {
+    loginOkReset_(d);
     return jsonOut_({ ok: true, role: 'admin', user: CONFIG.ADMIN_USER, name: CONFIG.ADMIN_USER, subjects: [] });
   }
   const t = findTeacher_(d && d.adminUser, d && d.adminPass);
   if (t) {
+    loginOkReset_(d);
     return jsonOut_({ ok: true, role: 'teacher', user: t.user, name: t.name, subjects: t.subjects });
   }
+  loginFail_(d);
   return jsonOut_({ ok: false, error: 'USER หรือ PASS ไม่ถูกต้อง' });
 }
 
@@ -304,6 +334,7 @@ function doGet(e) {
       return listWorks_(p.year || p.academicYear || '', p.semester || p.term || '');
     }
     if (action === 'terms') return jsonOut_({ ok: true, terms: listTermSheets_(), current: currentTerm_() });
+    if (action === 'diag') return diag_();
     if (action === 'listConfig') return listConfig_();
     return jsonOut_({ ok: true, message: 'Student Workpiece Storage API ready', time: new Date(), current: currentTerm_() });
   } catch (err) {
@@ -478,6 +509,17 @@ function listWorks_(yearFilter, semFilter) {
   return jsonOut_(readWorksObj_(ss, yearFilter, semFilter));
 }
 
+/** วินิจฉัยเบาๆ (ไม่แตะข้อมูล): รายชื่อชีต + จำนวนแถว/คอลัมน์ — เอาไว้หาชีตที่บวมจนอ่านไม่ขึ้น */
+function diag_() {
+  const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
+  const sheets = ss.getSheets().map(function(sh) {
+    let rows = -1, cols = -1;
+    try { rows = sh.getLastRow(); cols = sh.getLastColumn(); } catch (e) {}
+    return { name: sh.getName(), rows: rows, cols: cols };
+  });
+  return jsonOut_({ ok: true, sheets: sheets, terms: listTermSheets_(), current: currentTerm_() });
+}
+
 /** อ่านงานเป็น object (เปิด SS ครั้งเดียว, กรองที่แถว ไม่ทิ้งชีต legacy ที่มีปีในคอลัมน์) */
 function readWorksObj_(ss, yearFilter, semFilter) {
   const yf = String(yearFilter || '').trim();
@@ -492,7 +534,12 @@ function readWorksObj_(ss, yearFilter, semFilter) {
     return a.semester < b.semester ? -1 : 1;
   });
   let rows = [];
-  allWorksSheetsOf_(ss).forEach(function(o) { rows = rows.concat(readWorksSheet_(o.sh, o.term)); });
+  const failedSheets = [];
+  allWorksSheetsOf_(ss).forEach(function(o) {
+    // กันชีตเดียวพังแล้วล่มทั้งก้อน: ชีตไหนอ่านไม่ได้ ข้ามไปแล้วรายงานชื่อชีตให้หน้าเว็บเตือน
+    try { rows = rows.concat(readWorksSheet_(o.sh, o.term)); }
+    catch (e) { failedSheets.push({ sheet: o.sh.getName(), error: String((e && e.message) || e).slice(0, 200) }); }
+  });
   // กรองระดับแถว: ถูกต้องทั้งชีตรายเทอมและคลังเดิมที่มีคอลัมน์ปี/เทอม
   if (yf) rows = rows.filter(function(r) { return String(r.academicYear || '') === yf; });
   if (sf === '1' || sf === '2') rows = rows.filter(function(r) { return String(r.semester || '') === sf; });
@@ -502,7 +549,7 @@ function readWorksObj_(ss, yearFilter, semFilter) {
     if (a.timestamp > b.timestamp) return -1;
     return 0;
   });
-  return { rows: rows, total: rows.length, terms: terms };
+  return { rows: rows, total: rows.length, terms: terms, partial: failedSheets.length > 0, failedSheets: failedSheets };
 }
 
 /** นักเรียนส่งงาน (ไม่ต้องล็อกอิน) — ต้องระบุ academicYear + semester */
@@ -753,17 +800,15 @@ function deleteWork_(d) {
 
 /** มีแถวอื่น (ที่ไม่ใช่แถวกำลังลบ) อ้าง driveFileId นี้อยู่หรือไม่ */
 function fileStillUsed_(excludeSheetName, excludeRow, fileId) {
-  const all = allWorksSheets_();
-  for (let k = 0; k < all.length; k++) {
-    const ws = all[k].sh;
-    if (ws.getLastRow() < 2 || ws.getLastColumn() < 11) continue;
-    const n = ws.getLastRow() - 1;
-    const col = ws.getRange(2, 11, n, 1).getValues();
-    for (let i = 0; i < n; i++) {
-      if (String(col[i][0] || '').trim() === fileId) {
-        if (ws.getName() === excludeSheetName && (i + 2) === Number(excludeRow)) continue;
-        return true;
-      }
+  // งานกลุ่มแตกแถวอยู่ในชีตเดียวกันเสมอ จึงสแกนเฉพาะชีตนั้น (ไม่กวาดทุกชีต — เร็วขึ้นมากเมื่อข้อมูลโต)
+  const ws = SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(excludeSheetName);
+  if (!ws || ws.getLastRow() < 2 || ws.getLastColumn() < 11) return false;
+  const n = ws.getLastRow() - 1;
+  const col = ws.getRange(2, 11, n, 1).getValues();
+  for (let i = 0; i < n; i++) {
+    if (String(col[i][0] || '').trim() === fileId) {
+      if ((i + 2) === Number(excludeRow)) continue;
+      return true;
     }
   }
   return false;
