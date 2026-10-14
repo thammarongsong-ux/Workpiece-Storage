@@ -265,8 +265,8 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
         <div class="md:col-span-4"><label class="text-xs font-medium">คำอธิบาย/วิธีทำ</label><textarea id="asgDesc" rows="2" placeholder="อธิบายงาน คำสั่ง เกณฑ์คะแนน..." class="mt-1 w-full border rounded-xl px-2 py-2 text-sm"></textarea></div>
         <div class="md:col-span-2"><label class="text-xs font-medium">🎯 ภารกิจการเรียนรู้ <span class="font-normal text-slate-400">(บรรทัดละ 1 ข้อ)</span></label><textarea id="asgMissions" rows="2" placeholder="เช่น&#10;1. อ่านบทที่ 3&#10;2. สรุปเป็น mindmap&#10;3. ถ่ายรูปส่ง" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm"></textarea></div>
         <div class="md:col-span-2"><label class="text-xs font-medium">📦 ผลงานที่ต้องส่ง <span class="font-normal text-slate-400">(บรรทัดละ 1 อย่าง)</span></label><textarea id="asgDeliver" rows="2" placeholder="เช่น&#10;รูปภาพ 1 ใบ&#10;คำบรรยายใต้ภาพ" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm"></textarea></div>
-        <div><label class="text-xs font-medium">📅 วันที่สั่ง</label><input id="asgAssigned" type="datetime-local" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm bg-white"></div>
-        <div><label class="text-xs font-medium">⏰ กำหนดส่ง</label><input id="asgDue" type="datetime-local" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm bg-white"></div>
+        <div><label class="text-xs font-medium">📅 วันที่สั่ง <span class="font-normal text-slate-400">(พ.ศ.)</span></label><div class="flex gap-1 mt-1" id="pkAssigned"></div><input id="asgAssigned" type="hidden"></div>
+        <div><label class="text-xs font-medium">⏰ กำหนดส่ง <span class="font-normal text-slate-400">(พ.ศ.)</span></label><div class="flex gap-1 mt-1" id="pkDue"></div><input id="asgDue" type="hidden"></div>
         <div><label class="text-xs font-medium">⭐ คะแนนเต็ม <span class="font-normal text-slate-400">(ว่างได้)</span></label><input id="asgFull" inputmode="decimal" placeholder="เช่น 10" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm"></div>
         <div class="flex items-end gap-2">
           <label class="text-sm flex items-center gap-1 pb-2"><input id="asgActive" type="checkbox" checked class="w-4 h-4 accent-indigo-600"> เปิดรับงาน</label>
@@ -786,7 +786,58 @@ function myAssignSubjects(){
   return [];
 }
 function parseDue(s){ const t = Date.parse(String(s || '').replace(' ', 'T')); return isFinite(t) ? t : 0; }
-function fmtDue(s){ return String(s || '').slice(0, 16); }
+function fmtDue(s){
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(s || ''));
+  if(!m) return String(s || '').slice(0, 16);
+  const TH_M = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  return `${Number(m[3])} ${TH_M[Number(m[2])] || ''} ${Number(m[1]) + 543} ${m[4]}:${m[5]} น.`;
+}
+// ปฏิทินไทย (วัน/เดือนไทย/ปี พ.ศ.) แทน datetime-local ของเบราว์เซอร์ — เก็บค่าเป็น ค.ศ. ให้ backend เหมือนเดิม
+function fillThaiPicker(boxId, dH, dM){
+  const box = document.getElementById(boxId); if(!box || box.dataset.done) return; box.dataset.done = '1';
+  const be = new Date().getFullYear() + 543;
+  let years = '<option value="">ปี</option>';
+  for(let y = be - 2; y <= be + 3; y++) years += `<option value="${y}">${y}</option>`;
+  const months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  const p2 = n=>String(n).padStart(2, '0');
+  box.innerHTML =
+    `<select data-p="d" class="border rounded-xl px-1 py-2 text-sm bg-white w-[62px]"><option value="">วัน</option>${Array.from({length:31}, (_, i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select>` +
+    `<select data-p="m" class="border rounded-xl px-1 py-2 text-sm bg-white flex-1 min-w-0"><option value="">เดือน</option>${months.map((n, i)=>`<option value="${i+1}">${n}</option>`).join('')}</select>` +
+    `<select data-p="y" class="border rounded-xl px-1 py-2 text-sm bg-white w-[70px]">${years}</select>` +
+    `<select data-p="h" class="border rounded-xl px-1 py-2 text-sm bg-white w-[56px]">${Array.from({length:24}, (_, i)=>`<option value="${p2(i)}"${i===(dH ?? 8)?' selected':''}>${p2(i)}</option>`).join('')}</select><span class="self-center">:</span>` +
+    `<select data-p="n" class="border rounded-xl px-1 py-2 text-sm bg-white w-[56px]">${Array.from({length:12}, (_, i)=>`<option value="${p2(i*5)}"${i*5===(dM ?? 0)?' selected':''}>${p2(i*5)}</option>`).join('')}</select>`;
+  box.addEventListener('change', ()=>{ fixThaiDays(boxId); syncThaiPicker(boxId); });
+}
+function thaiSel(boxId, p){ const el = document.querySelector('#' + boxId + ' select[data-p="' + p + '"]'); return el ? el.value : ''; }
+function fixThaiDays(boxId){
+  const m = Number(thaiSel(boxId, 'm')), y = Number(thaiSel(boxId, 'y'));
+  const dEl = document.querySelector('#' + boxId + ' select[data-p="d"]'); if(!dEl) return;
+  const max = (m && y) ? new Date(y - 543, m, 0).getDate() : 31;
+  const keep = dEl.value;
+  let h = '<option value="">วัน</option>';
+  for(let i = 1; i <= max; i++) h += `<option value="${i}">${i}</option>`;
+  dEl.innerHTML = h;
+  if(Number(keep) <= max) dEl.value = keep;
+  syncThaiPicker(boxId);
+}
+function syncThaiPicker(boxId){
+  const hid = boxId === 'pkAssigned' ? 'asgAssigned' : 'asgDue';
+  const d = thaiSel(boxId, 'd'), m = thaiSel(boxId, 'm'), y = thaiSel(boxId, 'y');
+  const h = thaiSel(boxId, 'h') || '00', n = thaiSel(boxId, 'n') || '00';
+  const out = (d && m && y) ? `${y - 543}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} ${h}:${n}` : '';
+  document.getElementById(hid).value = out;
+  return out;
+}
+function setThaiPicker(boxId, val){
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(val || ''));
+  const set = (p, v)=>{ const el = document.querySelector('#' + boxId + ' select[data-p="' + p + '"]'); if(el) el.value = v; };
+  if(!m){ set('d', ''); set('m', ''); set('y', ''); syncThaiPicker(boxId); return; }
+  set('y', String(Number(m[1]) + 543)); set('m', String(Number(m[2]))); fixThaiDays(boxId);
+  set('d', String(Number(m[3]))); set('h', m[4]);
+  const mins = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
+  set('n', mins.includes(m[5]) ? m[5] : mins.reduce((a, b)=>Math.abs(Number(b) - Number(m[5])) < Math.abs(Number(a) - Number(m[5])) ? b : a));
+  syncThaiPicker(boxId);
+}
 function asgBadge(r){
   if(!r.assignmentId) return '';
   const a = asgById(r.assignmentId);
@@ -1731,9 +1782,11 @@ function toggleAssignForm(){
   const opening = f.classList.contains('hidden');
   f.classList.toggle('hidden');
   if(opening && !EDIT_ASG_ID){
-    const d = new Date(), p = n=>String(n).padStart(2,'0');
-    const now = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-    if(!document.getElementById('asgAssigned').value) document.getElementById('asgAssigned').value = now;
+    fillThaiPicker('pkAssigned', 8, 0); fillThaiPicker('pkDue', 17, 0);
+    if(!document.getElementById('asgAssigned').value){
+      const d = new Date(), p = n=>String(n).padStart(2,'0');
+      setThaiPicker('pkAssigned', `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`);
+    }
   }
 }
 function renderAssignBlock(){
@@ -1813,7 +1866,8 @@ async function saveAssignment(btn){
 }
 function clearAssignForm(){
   EDIT_ASG_ID = null;
-  ['asgTitle','asgDesc','asgAssigned','asgDue','asgMissions','asgDeliver','asgFull'].forEach(id=>{document.getElementById(id).value='';});
+  ['asgTitle','asgDesc','asgMissions','asgDeliver','asgFull'].forEach(id=>{document.getElementById(id).value='';});
+  setThaiPicker('pkAssigned', ''); setThaiPicker('pkDue', '');
   document.getElementById('asgClass').value = '';
   document.getElementById('asgActive').checked = true;
   document.getElementById('assignForm').classList.add('hidden');
@@ -1827,11 +1881,11 @@ function editAssignUI(id){
   document.getElementById('asgSubject').value = a.subject;
   document.getElementById('asgTitle').value = a.title;
   document.getElementById('asgDesc').value = a.description || '';
-  document.getElementById('asgAssigned').value = String(a.assignedAt||'').replace(' ','T').slice(0,16);
-  document.getElementById('asgDue').value = String(a.dueAt||'').replace(' ','T').slice(0,16);
   document.getElementById('asgMissions').value = a.missions || '';
   document.getElementById('asgDeliver').value = a.deliverables || '';
   document.getElementById('asgFull').value = a.fullScore || '';
+  fillThaiPicker('pkAssigned', 8, 0); fillThaiPicker('pkDue', 17, 0);
+  setThaiPicker('pkAssigned', a.assignedAt || ''); setThaiPicker('pkDue', a.dueAt || '');
   document.getElementById('asgClass').value = (a.classroom && [...document.getElementById('asgClass').options].some(o=>o.value===a.classroom)) ? a.classroom : '';
   document.getElementById('asgActive').checked = a.active;
   document.getElementById('assignForm').classList.remove('hidden');
@@ -2230,6 +2284,7 @@ document.getElementById('adPass')?.addEventListener('keydown', e=>{ if(e.key==='
 fillTermSelects();
 refreshAdminUI();
 renderMembers();
+fillThaiPicker('pkAssigned', 8, 0); fillThaiPicker('pkDue', 17, 0);
 loadData();
 </script>
 </body>
