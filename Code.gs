@@ -26,11 +26,11 @@ const CONFIG = {
   TEACHER_HEADERS: ['USER', 'PASS', 'ชื่อครู', 'วิชาที่สอน (comma คั่น)'],
   ADMIN_USER: 'FirstStar',
   ADMIN_PASS: '574001',
-  VERSION: 'term-7', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
+  VERSION: 'term-8', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
   HEADERS: [
     'Timestamp','ชื่อ-สกุล','ชั้น/ห้อง','วิชา','ประเภทงาน','ชื่อชิ้นงาน',
     'คำอธิบาย','ชนิดไฟล์','ชื่อไฟล์','File URL','Drive File ID','สถานะตรวจ','ความเห็นครู',
-    'ปีการศึกษา','ภาคเรียน','รหัสกลุ่ม'
+    'ปีการศึกษา','ภาคเรียน','รหัสกลุ่ม','ผู้ตรวจ'
   ],
   HEADERS_LEGACY_LEN: 13,
   DEFAULT_SUBJECTS: ['ภาษาไทย','คณิตศาสตร์','วิทยาศาสตร์','ภาษาอังกฤษ','สังคมศึกษา','ศิลปะ','การงานอาชีพ','สุขศึกษา/พละ','คอมพิวเตอร์']
@@ -101,7 +101,7 @@ function setupSheet() {
   Logger.log('setupSheet OK, current term: ' + cur.year + '/' + cur.semester);
 }
 
-/** เติม/อัปเกรดหัวตารางเป็น 16 คอลัมน์ (รองรับชีตเก่า 13/15 คอลัมน์โดยไม่ลบข้อมูล) */
+/** เติม/อัปเกรดหัวตารางเป็น 17 คอลัมน์ (รองรับชีตเก่า 13/15/16 คอลัมน์โดยไม่ลบข้อมูล) */
 function ensureHeaders_(sh) {
   if (!sh) return sh;
   if (sh.getLastRow() === 0) {
@@ -113,13 +113,14 @@ function ensureHeaders_(sh) {
   if (width < CONFIG.HEADERS.length) {
     sh.getRange(1, 1, 1, CONFIG.HEADERS.length).setValues([CONFIG.HEADERS]);
   } else {
-    // เติมเฉพาะหัวที่ขาด (คอลัมน์ 14-16) กันทับหัวเดิมที่ผู้ใช้อาจแก้
+    // เติมเฉพาะหัวที่ขาด (คอลัมน์ 14-17) กันทับหัวเดิมที่ผู้ใช้อาจแก้
     const h14 = String(sh.getRange(1, 14).getValue() || '').trim();
     const h15 = String(sh.getRange(1, 15).getValue() || '').trim();
     const h16 = String(sh.getRange(1, 16).getValue() || '').trim();
     if (!h14) sh.getRange(1, 14).setValue(CONFIG.HEADERS[13]);
     if (!h15) sh.getRange(1, 15).setValue(CONFIG.HEADERS[14]);
     if (!h16) sh.getRange(1, 16).setValue(CONFIG.HEADERS[15]);
+    try { if (!String(sh.getRange(1, 17).getValue() || '').trim()) sh.getRange(1, 17).setValue(CONFIG.HEADERS[16]); } catch (e) {}
   }
   return sh;
 }
@@ -449,6 +450,7 @@ function readWorksSheet_(sh, term) {
       academicYear: y,
       semester: s,
       groupId: String(r[15] || '').trim(),
+      gradedBy: String(r[16] || '').trim(),
       termId: term ? term.termId : (y && (s === '1' || s === '2') ? y + '_' + s : ''),
       sheetName: sheetName,
       termLabel: term ? termLabel_(term.year, term.semester) : (y && s ? termLabel_(y, s) : 'คลังเดิม (ก่อนแยกเทอม)')
@@ -623,9 +625,14 @@ function updateStatus_(d) {
   const subject = String(idv[2] || '').trim();
   const perm = canGradeSubject_(d, subject);
   if (!perm.ok) return jsonOut_({ ok: false, error: perm.error || 'ต้องล็อกอินก่อน' });
+  const grader = perm.role === 'admin' ? 'Admin' : (perm.teacher ? perm.teacher.name : '');
+  const stamp = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd HH:mm');
+  const gradedBy = (grader ? grader + ' ' : '') + stamp;
+  try { if (!String(sh.getRange(1, 17).getValue() || '').trim()) sh.getRange(1, 17).setValue(CONFIG.HEADERS[16]); } catch (e) {}
   sh.getRange(row, 12).setValue(status);
   sh.getRange(row, 13).setValue(comment);
-  return jsonOut_({ ok: true, row: row, status: status, sheetName: sh.getName(), role: perm.role });
+  sh.getRange(row, 17).setValue(gradedBy);
+  return jsonOut_({ ok: true, row: row, status: status, sheetName: sh.getName(), role: perm.role, gradedBy: gradedBy });
 }
 
 /** ลบงาน (Admin เท่านั้น) */
