@@ -1565,6 +1565,7 @@ function renderCheck(){
   const more = document.getElementById('chkMore');
   if(more){ more.classList.toggle('hidden', rows.length <= CHK_LIMIT); more.textContent = `โหลดเพิ่ม ↓ (แสดง ${show.length}/${rows.length})`; }
   updateCheckBatchBar();
+  renderAssignBlock(); // วาดกล่องใบสั่งงานทุกครั้งที่เข้าหน้าตรวจ (กันกล่องหายเมื่อสลับแท็บมา)
 }
 async function setStatus(sheetName,row,status,btn,cmtPrefix){
   if(!ADMIN) return alert('🔒 ต้องล็อกอินครู/Admin ก่อน');
