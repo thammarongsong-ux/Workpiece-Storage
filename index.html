@@ -17,7 +17,7 @@ let SUBJECTS = ['ภาษาไทย','คณิตศาสตร์','วิ
 let STUDENTS = [];
 let TERMS = []; // [{year, semester, termId, sheetName}] จาก backend
 let CURRENT_TERM = null; // {year, semester}
-const BACKEND_VERSION = 'term-9'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
+const BACKEND_VERSION = 'term-10'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
 const CATEGORIES = [
   { name:'ใบงาน', icon:'📝', color:'from-amber-400 to-orange-500' },
   { name:'โครงงาน', icon:'🔬', color:'from-emerald-400 to-teal-600' },
@@ -145,6 +145,11 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
         <div><label class="text-sm font-medium">วิชา *</label><select name="subject" required id="fSubject" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></select></div>
         <div><label class="text-sm font-medium">ประเภทงาน *</label><select name="category" required id="fCategory" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"></select></div>
       </div>
+      <div class="bg-violet-50/50 border border-violet-200 rounded-xl p-3">
+        <label class="text-sm font-medium">📌 ส่งตามใบสั่งงาน <span class="text-xs text-slate-400">(ไม่บังคับ — เลือกแล้ววิชา+ชื่องานจะถูกกรอกให้)</span></label>
+        <select id="fAssign" class="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white"><option value="">— ส่งอิสระ (ไม่ผูกใบสั่งงาน) —</option></select>
+        <p id="assignInfo" class="text-xs text-violet-700 mt-1"></p>
+      </div>
       <div class="bg-indigo-50/50 border border-indigo-200 rounded-xl p-3">
         <div class="flex items-center gap-2 flex-wrap">
           <span class="text-sm font-medium flex-1">👥 สมาชิกในงานชิ้นนี้ <span id="memberCount" class="text-xs text-slate-400">งานเดี่ยวไม่ต้องกดเพิ่ม</span></span>
@@ -233,8 +238,43 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
     <select id="chkName" class="border rounded-xl px-3 py-2 text-sm bg-white max-w-[200px]"><option value="">ทุกคน</option></select>
     <select id="chkSubject" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกวิชา</option></select>
     <select id="chkCategory" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกประเภทงาน</option></select>
+    <select id="chkAssign" class="border rounded-xl px-3 py-2 text-sm bg-white max-w-[200px]"><option value="">ทุกใบสั่งงาน</option></select>
     <select id="chkStatus" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกสถานะ</option><option>รอตรวจ</option><option>ผ่าน</option><option>ต้องแก้ไข</option></select>
     <input id="chkSearch" placeholder="🔍 ค้นชื่องาน..." class="border rounded-xl px-3 py-2 text-sm flex-1 min-w-[160px] bg-white">
+  </div>
+  <div id="assignBox" class="hidden bg-white rounded-2xl border p-4 mb-4">
+    <div class="flex flex-wrap gap-2 items-center mb-2">
+      <h3 class="font-semibold flex-1">📋 งานที่สั่ง <span class="text-xs font-normal text-slate-400">ครูกำหนดชื่องาน/วันสั่ง/กำหนดส่ง นักเรียนกดส่งตามใบสั่งได้</span></h3>
+      <button onclick="document.getElementById('assignForm').classList.toggle('hidden')" class="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-sm">＋ สั่งงานใหม่</button>
+    </div>
+    <div id="assignForm" class="hidden bg-indigo-50/50 border border-indigo-200 rounded-xl p-3 mb-3">
+      <div class="grid md:grid-cols-4 gap-2">
+        <div><label class="text-xs font-medium">วิชา *</label><select id="asgSubject" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm bg-white"></select></div>
+        <div class="md:col-span-3"><label class="text-xs font-medium">ชื่องานที่สั่ง *</label><input id="asgTitle" placeholder="เช่น แบบฝึกหัดบทที่ 3 ข้อ 1-10" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm"></div>
+        <div class="md:col-span-4"><label class="text-xs font-medium">คำอธิบาย/วิธีทำ</label><textarea id="asgDesc" rows="2" placeholder="อธิบายงาน คำสั่ง เกณฑ์คะแนน..." class="mt-1 w-full border rounded-xl px-2 py-2 text-sm"></textarea></div>
+        <div><label class="text-xs font-medium">📅 วันที่สั่ง</label><input id="asgAssigned" type="datetime-local" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm bg-white"></div>
+        <div><label class="text-xs font-medium">⏰ กำหนดส่ง</label><input id="asgDue" type="datetime-local" class="mt-1 w-full border rounded-xl px-2 py-2 text-sm bg-white"></div>
+        <div class="flex items-end gap-2">
+          <label class="text-sm flex items-center gap-1 pb-2"><input id="asgActive" type="checkbox" checked class="w-4 h-4 accent-indigo-600"> เปิดรับงาน</label>
+        </div>
+        <div class="flex items-end gap-2">
+          <button onclick="saveAssignment(this)" class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm">💾 บันทึก</button>
+          <button id="assignCancelBtn" onclick="cancelAssignEdit()" class="hidden px-4 py-2 rounded-xl bg-slate-200 text-sm">ยกเลิก</button>
+        </div>
+      </div>
+    </div>
+    <div id="assignList" class="space-y-2"></div>
+  </div>
+  <div id="chkBatchBar" class="hidden bg-indigo-600 text-white rounded-2xl p-3 mb-3">
+    <div class="flex flex-wrap gap-2 items-center text-sm">
+      <b id="chkBatchCount">เลือก 0 ชิ้น</b>
+      <button onclick="selectAllCheck()" class="px-3 py-1.5 rounded-xl bg-white/20 text-white text-sm">☑ เลือกทั้งหมดที่กรองได้</button>
+      <select id="chkBatchStatus" class="text-slate-800 border rounded-xl px-2 py-1.5 text-sm bg-white"><option>ผ่าน</option><option>ต้องแก้ไข</option><option>รอตรวจ</option></select>
+      <input id="chkBatchComment" placeholder="💬 ความเห็นเดียวกัน (ว่าง=คงเดิม)" class="border rounded-xl px-2 py-1.5 text-sm flex-1 min-w-[140px] text-slate-800">
+      <input id="chkBatchScore" inputmode="decimal" placeholder="⭐ คะแนนเท่ากัน (ว่าง=คงเดิม)" class="border rounded-xl px-2 py-1.5 text-sm w-48 text-slate-800">
+      <button onclick="gradeBatchCheck(this)" class="px-3 py-1.5 rounded-xl bg-emerald-500 text-white text-sm font-semibold disabled:opacity-50">💾 บันทึกที่เลือก</button>
+      <button onclick="clearCheckBatch()" class="px-3 py-1.5 rounded-xl bg-white/20 text-white text-sm">ล้าง</button>
+    </div>
   </div>
   <div id="chkCount" class="text-sm text-slate-500 mb-2"></div>
   <div id="chkList" class="space-y-3"></div>
@@ -305,6 +345,10 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
       <span class="text-sm font-semibold flex-1">✅ ล็อกอินแล้ว (<span id="adminName"></span>)</span>
       <a id="linkSheet" href="#" target="_blank" class="text-xs px-3 py-2 rounded-xl bg-emerald-600 text-white">📊 เปิด Sheet (Admin)</a>
       <a id="linkDrive" href="#" target="_blank" class="text-xs px-3 py-2 rounded-xl bg-amber-500 text-white">📁 เปิด Drive (Admin)</a>
+      <div id="quickSwitchBox" class="hidden items-center gap-1">
+        <select id="quickSwitchTeacher" class="text-xs border rounded-xl px-2 py-2 bg-white text-slate-800 max-w-[150px]"><option value="">🔀 สลับบทบาท...</option></select>
+        <button onclick="quickSwitch()" class="text-xs px-3 py-2 rounded-xl bg-purple-600 text-white">สลับ</button>
+      </div>
       <button onclick="doLogout()" class="text-xs px-3 py-2 rounded-xl bg-slate-200">ออกจากระบบ</button>
     </div>
     <div id="sysTermBox" class="bg-white rounded-2xl border p-4">
@@ -379,6 +423,10 @@ let ADMIN = JSON.parse(sessionStorage.getItem('Workpiece Storage_admin')||'null'
 if(ADMIN && !ADMIN.role) ADMIN.role = 'admin'; // session เก่าก่อนมีระบบครู ให้นับเป็น admin
 let TEACHERS = []; // บัญชีครู (Admin เท่านั้นที่โหลดได้ รวม PASS ไว้รีเซ็ต)
 let SUBJECT_ROWS = [];
+let ASSIGNMENTS = []; // ใบสั่งงาน (ครูกำหนดชื่องาน/วันสั่ง/กำหนดส่ง)
+let C_BATCH = new Set(); // งานที่ติ๊กในหน้าตรวจ "sheetName||row"
+let C_FILTERED = []; // งานที่ผ่านตัวกรองหน้าตรวจรอบล่าสุด (ใช้ปุ่มเลือกทั้งหมด)
+let EDIT_ASG_ID = null; // รหัสใบสั่งงานที่กำลังแก้ไข (null = เพิ่มใหม่)
 // ---------- บทบาท: admin เห็น/ทำได้ทุกอย่าง, teacher ตรวจได้เฉพาะวิชาตัวเอง ----------
 function isAdmin(){ return !!ADMIN && (ADMIN.role || 'admin') === 'admin'; }
 function isTeacher(){ return !!ADMIN && ADMIN.role === 'teacher'; }
@@ -599,6 +647,8 @@ function refreshAdminUI(){
   // สิทธิ์ระบบ (วิชา/นักเรียน/บัญชีครู/ย้อนหลังใส่ปี) เป็นของ Admin เท่านั้น — ครูเห็นแค่กล่องข้อมูลตัวเอง
   ['sysTermBox','sysGridBox','teacherManageBox'].forEach(id=>{ const el=document.getElementById(id); if(el) el.classList.toggle('hidden', on && !admin); });
   const tib = document.getElementById('teacherInfoBox'); if(tib) tib.classList.toggle('hidden', !isTeacher());
+  const qsb = document.getElementById('quickSwitchBox');
+  if(qsb){ const show = isAdmin() && !ADMIN.switchedByAdmin; qsb.classList.toggle('hidden', !show); qsb.classList.toggle('flex', show); }
   if(isTeacher()){
     const tn = document.getElementById('teacherInfoName'); if(tn) tn.textContent = ADMIN.name || ADMIN.user;
     const ts = document.getElementById('teacherInfoSubjects'); if(ts) ts.textContent = teacherSubjects().join(', ') || '—';
@@ -612,7 +662,7 @@ function refreshAdminUI(){
     document.getElementById('linkDrive').style.display = hideLinks ? 'none' : '';
     if(ACTIVE_TAB==='admin' && admin) { renderAdminLists(); loadTeachers(); }
   }
-  if(ACTIVE_TAB==='check') renderCheck();
+  if(ACTIVE_TAB==='check'){ renderCheck(); renderAssignBlock(); }
   if(ACTIVE_TAB==='teacher') renderTeacherDash();
 }
 
@@ -664,6 +714,28 @@ function avgScore(list){
   if(!n.length) return null;
   return Math.round(n.reduce((a,b)=>a+b,0)/n.length*10)/10;
 }
+// ---------- ใบสั่งงาน ----------
+function asgById(id){ return ASSIGNMENTS.find(a=>String(a.id)===String(id || '')) || null; }
+function myAssignSubjects(){
+  if(isAdmin()) return [...SUBJECTS];
+  if(isTeacher()) return teacherSubjects().filter(s=>SUBJECTS.includes(s));
+  return [];
+}
+function parseDue(s){ const t = Date.parse(String(s || '').replace(' ', 'T')); return isFinite(t) ? t : 0; }
+function fmtDue(s){ return String(s || '').slice(0, 16); }
+function asgBadge(r){
+  if(!r.assignmentId) return '';
+  const a = asgById(r.assignmentId);
+  if(!a) return '<span class="badge bg-slate-100 text-slate-500">📌 งานที่ถูกลบ</span>';
+  let due = '';
+  if(a.dueAt){
+    const over = parseDue(a.dueAt) && Date.now() > parseDue(a.dueAt) && r.status === 'รอตรวจ';
+    due = over
+      ? `<span class="badge bg-red-100 text-red-700">⏰ เลยกำหนด ${esc(fmtDue(a.dueAt))}</span>`
+      : `<span class="badge bg-slate-100 text-slate-500">⏰ ${esc(fmtDue(a.dueAt))}</span>`;
+  }
+  return `<span class="badge bg-violet-100 text-violet-700">📌 ${esc(a.title)}</span>` + due;
+}
 function fileIcon(k){ return k==='pdf'?'📕':k==='link'?'🔗':'🖼️'; }
 
 // ===== โหลดลื่น: init ครั้งเดียว + ไม่ล้างจอ + ยกเลิกคำขอซ้อน =====
@@ -690,6 +762,7 @@ function applyBootData(j){
   if(j.subjects?.length) SUBJECTS = j.subjects;
   if(j.subjectRows) SUBJECT_ROWS = j.subjectRows.map(o=>({row:o.row, name:o.name, classrooms:o.classrooms||[]}));
   if(j.students) STUDENTS = j.students||[];
+  if(j.assignments) ASSIGNMENTS = j.assignments||[];
   // เช็คเวอร์ชัน backend: ไม่ตรง = ยังรันโค้ดเก่า (ไม่มีปี/เทอม) ให้ขึ้นแถบแดงเตือนทันที
   const verOk = j && j.version === BACKEND_VERSION;
   const vb = document.getElementById('verBanner');
@@ -773,6 +846,17 @@ function switchBackToAdmin(){
   sessionStorage.setItem('Workpiece Storage_admin', JSON.stringify(ADMIN));
   refillSubjects(); refreshAdminUI();
 }
+function quickSwitch(){
+  const row = Number(document.getElementById('quickSwitchTeacher')?.value || 0);
+  if(!row) return alert('เลือกบัญชีครูจาก dropdown ก่อนกดสลับ');
+  switchToTeacher(row);
+}
+function fillQuickSwitch(){
+  const el = document.getElementById('quickSwitchTeacher'); if(!el) return;
+  const keep = el.value;
+  el.innerHTML = '<option value="">🔀 สลับบทบาท...</option>' + TEACHERS.map(t=>`<option value="${t.row}">${esc(t.name)} (@${esc(t.user)})</option>`).join('');
+  if(TEACHERS.some(t=>String(t.row)===String(keep))) el.value = keep;
+}
 function isAuthError(m){ return /ต้องล็อกอิน|USER หรือ PASS|บัญชีครูไม่ถูกต้อง|เฉพาะ Admin/.test(String(m||'')); }
 function forceLogout(msg){
   ADMIN=null; TEACHERS=[];
@@ -828,20 +912,22 @@ async function addStudent(btn){
 async function delSubject(row){ if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น'); if(!confirm('ลบวิชานี้? (งานเดิมที่ใช้วิชานี้จะไม่ถูกลบ)')) return; try{ await adminPost({action:'deleteSubject',row}); softRefresh(); }catch(e){ alert(e.message); } }
 async function delStudent(row){ if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น'); if(!confirm('ลบชื่อนักเรียนนี้? (งานเดิมที่ส่งแล้วจะไม่ถูกลบ)')) return; try{ await adminPost({action:'deleteStudent',row}); softRefresh(); }catch(e){ alert(e.message); } }
 // ---------- บัญชีครู (Admin เท่านั้น) ----------
+let TEACHERS_ERR = '';
 async function loadTeachers(){
   if(!isAdmin()) return;
   try{
     const j = await adminPost({action:'listTeachers'});
-    TEACHERS = j.teachers || [];
-  }catch(e){ TEACHERS = []; }
+    TEACHERS = j.teachers || []; TEACHERS_ERR = '';
+  }catch(e){ TEACHERS = []; TEACHERS_ERR = String(e.message || e); }
   renderTeachers();
 }
 function renderTeachers(){
   const box = document.getElementById('teacherAdminList'); if(!box) return;
   const cnt = document.getElementById('teacherCount'); if(cnt) cnt.textContent = `(${TEACHERS.length} บัญชี)`;
   fillTeacherClassFilter('newTeacherClass');
+  fillQuickSwitch();
   renderSubjectPick('newTeacherSubjects', NEW_T_SEL, null, document.getElementById('newTeacherClass')?.value || ''); // กล่องเพิ่มใหม่: ติ๊กได้เฉพาะวิชาที่ยังว่าง
-  box.innerHTML = TEACHERS.map(t=>`<div class="border rounded-xl px-3 py-1.5 text-sm"><div class="flex justify-between items-center gap-2"><span>👩‍🏫 ${esc(t.name)} <span class="text-slate-400">@${esc(t.user)}</span></span><span class="flex gap-2"><button onclick="switchToTeacher(${t.row})" class="text-purple-600 text-xs">🔀 สลับบทบาท</button><button onclick="editTeacherUI(${t.row})" class="text-blue-600 text-xs">✏️ แก้ไข</button><button onclick="delTeacher(${t.row})" class="text-red-500 text-xs">ลบ</button></span></div><div class="flex gap-1 flex-wrap mt-1">${(t.subjects||[]).map(s=>`<span class="badge bg-emerald-100 text-emerald-700">${esc(s)}</span>`).join('') || '<span class="badge bg-red-100 text-red-700">ยังไม่กำหนดวิชา</span>'}</div><div id="teacher-edit-${t.row}" class="mt-1"></div></div>`).join('') || '<p class="text-xs text-slate-400">ยังไม่มีบัญชีครู — เพิ่มด้านบนได้เลย (รัน setupSheet() ใน Apps Script ก่อน 1 ครั้งถ้าเพิ่งอัปเกรด)</p>';
+  box.innerHTML = TEACHERS.map(t=>`<div class="border rounded-xl px-3 py-1.5 text-sm"><div class="flex justify-between items-center gap-2"><span>👩‍🏫 ${esc(t.name)} <span class="text-slate-400">@${esc(t.user)}</span></span><span class="flex gap-2"><button onclick="switchToTeacher(${t.row})" class="text-purple-600 text-xs">🔀 สลับบทบาท</button><button onclick="editTeacherUI(${t.row})" class="text-blue-600 text-xs">✏️ แก้ไข</button><button onclick="delTeacher(${t.row})" class="text-red-500 text-xs">ลบ</button></span></div><div class="flex gap-1 flex-wrap mt-1">${(t.subjects||[]).map(s=>`<span class="badge bg-emerald-100 text-emerald-700">${esc(s)}</span>`).join('') || '<span class="badge bg-red-100 text-red-700">ยังไม่กำหนดวิชา</span>'}</div><div id="teacher-edit-${t.row}" class="mt-1"></div></div>`).join('') || '<p class="text-xs text-slate-400">ยังไม่มีบัญชีครู — เพิ่มด้านบนได้เลย (รัน setupSheet() ใน Apps Script ก่อน 1 ครั้งถ้าเพิ่งอัปเกรด)</p>' + (TEACHERS_ERR.includes('unknown action') ? '<p class="text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl p-2 mt-1">❌ Backend ยังเป็นตัวเก่า (ไม่รู้จักบัญชีครู) — Deploy Code.gs ตัวใหม่แบบ New version แล้วรีเฟรชหน้านี้</p>' : '');
 }
 // ---------- สุ่มรหัส + เลือกวิชาแบบติ๊ก (กันซ้ำ) ----------
 // รหัสอ่านง่าย 8 ตัว ตัดตัวที่สับสนออก (0/O, 1/l/I)
@@ -1025,7 +1111,7 @@ function renderActive(){
   else if(ACTIVE_TAB==='admin' && isAdmin()) { renderAdminLists(); loadTeachers(); }
   document.getElementById('ftotal').textContent='ทั้งหมด '+ALL.length+' ชิ้น ('+TERMS.length+' เทอม + คลังเดิม)';
 }
-function renderAll(){ fillTermSelects(); fillSubjects(); renderActive(); }
+function renderAll(){ fillTermSelects(); fillSubjects(); fillAssignOptions(); renderActive(); }
 
 // ===== DASHBOARD =====
 function renderDash(){
@@ -1135,7 +1221,7 @@ document.getElementById('submitForm').onsubmit = async (e)=>{
   if(PENDING_SUBMIT){ payload=PENDING_SUBMIT; isRetry=true; }
   else{
   const fd=new FormData(e.target);
-  payload={ action:'submit', submitId:newSubmitId(), academicYear:document.getElementById('fYear').value, semester:document.getElementById('fTerm').value, fullName:String(fd.get('fullName')||'').trim(), classroom:String(fd.get('classroom')||'').trim(), subject:fd.get('subject'), category:fd.get('category'), title:String(fd.get('title')||'').trim(), description:String(fd.get('description')||'').trim(), fileKind };
+  payload={ action:'submit', submitId:newSubmitId(), academicYear:document.getElementById('fYear').value, semester:document.getElementById('fTerm').value, fullName:String(fd.get('fullName')||'').trim(), classroom:String(fd.get('classroom')||'').trim(), subject:fd.get('subject'), category:fd.get('category'), title:String(fd.get('title')||'').trim(), description:String(fd.get('description')||'').trim(), fileKind, assignmentId:document.getElementById('fAssign')?.value||'' };
   payload.members = MEMBERS.length ? MEMBERS.slice() : [{fullName:payload.fullName, classroom:payload.classroom}];
   if(!payload.academicYear || !/^\d{4}$/.test(payload.academicYear) || (payload.semester!=='1' && payload.semester!=='2')){msg.innerHTML='<p class="text-red-600 text-sm">⚠️ กรุณาเลือก ปีการศึกษา / ภาคเรียน ให้ถูกต้อง</p>';return;}
   const members = payload.members.filter(m=>m.fullName && m.classroom);
@@ -1185,6 +1271,7 @@ document.getElementById('submitForm').onsubmit = async (e)=>{
     const keepYear = payload.academicYear, keepTerm = payload.semester;
     e.target.reset();
     document.getElementById('fYear').value = keepYear; document.getElementById('fTerm').value = keepTerm;
+    document.getElementById('assignInfo').textContent = '';
     document.getElementById('previewBox').classList.add('hidden');
     cascadeName('fClass','fName','— เลือกชื่อ-สกุล —');
     MEMBERS = []; renderMembers();
@@ -1233,9 +1320,9 @@ function renderSummary(){
   if(cnt) cnt.textContent = `แสดง ${show.length}/${rows.length} แถว`;
 }
 function exportCSV(){
-  const head=['ปีการศึกษา','ภาคเรียน','Timestamp','ชื่อ-สกุล','ชั้น','วิชา','ประเภท','ชื่อชิ้นงาน','คำอธิบาย','ชนิดไฟล์','File URL','สถานะ','ความเห็นครู','คะแนน','ผู้ตรวจ','Sheet','รหัสกลุ่ม'];
+  const head=['ปีการศึกษา','ภาคเรียน','Timestamp','ชื่อ-สกุล','ชั้น','วิชา','ประเภท','ชื่อชิ้นงาน','ใบสั่งงาน','คำอธิบาย','ชนิดไฟล์','File URL','สถานะ','ความเห็นครู','คะแนน','ผู้ตรวจ','Sheet','รหัสกลุ่ม'];
   const q2=v=>`"${String(v??'').replace(/"/g,'""')}"`;
-  const lines=[head.join(',')].concat(sumFiltered().map(r=>[q2(r.academicYear),q2(r.semester),r.timestamp,q2(r.fullName),q2(r.classroom),q2(r.subject),q2(r.category),q2(r.title),q2(r.description),r.fileKind,q2(r.fileUrl),q2(r.status),q2(r.comment),q2(r.score||''),q2(r.gradedBy||''),q2(r.sheetName||''),q2(r.groupId||'')].join(',')));
+  const lines=[head.join(',')].concat(sumFiltered().map(r=>[q2(r.academicYear),q2(r.semester),r.timestamp,q2(r.fullName),q2(r.classroom),q2(r.subject),q2(r.category),q2(r.title),q2((asgById(r.assignmentId)||{}).title||''),q2(r.description),r.fileKind,q2(r.fileUrl),q2(r.status),q2(r.comment),q2(r.score||''),q2(r.gradedBy||''),q2(r.sheetName||''),q2(r.groupId||'')].join(',')));
   const blob=new Blob(["\ufeff"+lines.join('\n')],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Workpiece Storage_export.csv';a.click();
 }
@@ -1245,8 +1332,11 @@ function chkShowMore(){ CHK_LIMIT += CHK_STEP; renderCheck(); }
 function renderCheck(){
   const y=val('chkYear'), t=val('chkTerm');
   const c=document.getElementById('chkCategory').value, s=val('chkSubject'), cl=val('chkClass'), nm=val('chkName'), st=document.getElementById('chkStatus').value, q=document.getElementById('chkSearch').value.trim().toLowerCase();
+  fillChkAssign();
+  const ag=document.getElementById('chkAssign').value;
   const onlyMine = isTeacher() ? teacherSubjects() : null; // ครูเห็นเฉพาะวิชาตัวเอง
-  const rows=ALL.filter(r=>matchTerm(r,y,t)&&matchSheet(r,s,cl,nm)&&(!c||r.category===c)&&(!st||r.status===st)&&(!q||r.title.toLowerCase().includes(q))&&(!onlyMine||onlyMine.includes(String(r.subject||''))));
+  const rows=ALL.filter(r=>matchTerm(r,y,t)&&matchSheet(r,s,cl,nm)&&(!c||r.category===c)&&(!st||r.status===st)&&(!q||r.title.toLowerCase().includes(q))&&(!onlyMine||onlyMine.includes(String(r.subject||'')))&&(ag===''||(ag==='none'?!r.assignmentId:String(r.assignmentId||'')===ag)));
+  C_FILTERED = rows.filter(r=>canGradeSubject(r.subject));
   document.getElementById('chkCount').textContent=`พบ ${rows.length} ชิ้น • รอตรวจ ${rows.filter(r=>r.status==='รอตรวจ').length} ชิ้น` + (y||t ? ` • ปี ${y||'ทุกปี'} เทอม ${t||'ทุกเทอม'}` : '') + (onlyMine ? ` • เฉพาะวิชาคุณ (${onlyMine.join(', ')})` : '');
   const show = rows.slice(0, CHK_LIMIT);
   document.getElementById('chkList').innerHTML=show.map(r=>{
@@ -1255,7 +1345,7 @@ function renderCheck(){
     return `<div class="bg-white rounded-2xl border p-4 flex flex-col md:flex-row gap-4" id="chk-${esc(r.sheetName||'ผลงาน')}-${r.row}">
       <div class="md:w-40 shrink-0">${th?`<img src="${th}" loading="lazy" decoding="async" class="w-full h-28 object-cover rounded-xl" alt="" data-fid="${r.driveFileId}" data-fsz="w200" data-kind="${r.fileKind}" onerror="thumbFailover(this)">`:`<div class="w-full h-28 rounded-xl bg-slate-100 grid place-items-center text-4xl">${fileIcon(r.fileKind)}</div>`}</div>
       <div class="flex-1">
-        <p class="font-semibold">${esc(r.title)} ${statusBadge(r.status)} ${scoreBadge(r.score)} ${termBadge(r)} ${groupBadge(r)}${can?'':' <span class="badge bg-slate-100 text-slate-500">🔒 วิชาอื่น</span>'}</p>
+        <p class="font-semibold">${can?`<input type="checkbox" onchange="toggleCheckBatch(this)" data-sheet="${esc(r.sheetName||'ผลงาน')}" data-row="${r.row}" ${C_BATCH.has((r.sheetName||'ผลงาน')+'||'+r.row)?'checked':''} title="ติ๊กเพื่อตรวจพร้อมกันหลายชิ้น" class="w-4 h-4 accent-indigo-600 mr-1 align-middle">`:''}${esc(r.title)} ${statusBadge(r.status)} ${scoreBadge(r.score)} ${termBadge(r)} ${groupBadge(r)}${asgBadge(r)}${can?'':' <span class="badge bg-slate-100 text-slate-500">🔒 วิชาอื่น</span>'}</p>
         <p class="text-sm text-slate-500">👦 ${esc(r.fullName)}${r.classroom?' ('+esc(r.classroom)+')':''} • 📚 ${esc(r.subject)} • 📂 ${esc(r.category)} • ${esc(r.timestamp)} • ชีต ${esc(r.sheetName||'ผลงาน')}${r.gradedBy?` • ✔ ${esc(r.gradedBy)}`:''}</p>
         ${groupLine(r)}
         ${r.description?`<p class="text-sm mt-1">${esc(r.description)}</p>`:''}
@@ -1266,12 +1356,14 @@ function renderCheck(){
           <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ผ่าน',this)" ${can?'':'disabled'} class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-sm disabled:opacity-50">✅ ผ่าน</button>
           <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ต้องแก้ไข',this)" ${can?'':'disabled'} class="px-3 py-1.5 rounded-xl bg-red-500 text-white text-sm disabled:opacity-50">✏️ แก้ไข</button>
           <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'รอตรวจ',this)" ${can?'':'disabled'} class="px-3 py-1.5 rounded-xl bg-slate-200 text-sm disabled:opacity-50">⏳ รอตรวจ</button>
+          ${(can||isAdmin())&&groupMates(r).length?`<button data-busy="0" onclick="gradeGroup('${esc(r.sheetName||'ผลงาน')}',${r.row},'ผ่าน',this)" title="ผ่านทั้งกลุ่ม ${groupMates(r).length+1} ชิ้น" class="px-3 py-1.5 rounded-xl bg-teal-600 text-white text-sm disabled:opacity-50">👥✅</button> <button data-busy="0" onclick="gradeGroup('${esc(r.sheetName||'ผลงาน')}',${r.row},'ต้องแก้ไข',this)" title="ให้แก้ไขทั้งกลุ่ม" class="px-3 py-1.5 rounded-xl bg-orange-500 text-white text-sm disabled:opacity-50">👥✏️</button>`:''}
           ${isAdmin()?`<button onclick="delWork('${esc(r.sheetName||'ผลงาน')}',${r.row},this)" class="px-3 py-1.5 rounded-xl bg-slate-900 text-white text-sm">🗑️ ลบ</button>`:''}
         </div>
       </div></div>`;
   }).join('')||'<p class="text-slate-400 text-sm">ไม่พบงานตามเงื่อนไข</p>';
   const more = document.getElementById('chkMore');
   if(more){ more.classList.toggle('hidden', rows.length <= CHK_LIMIT); more.textContent = `โหลดเพิ่ม ↓ (แสดง ${show.length}/${rows.length})`; }
+  updateCheckBatchBar();
 }
 async function setStatus(sheetName,row,status,btn,cmtPrefix){
   if(!ADMIN) return alert('🔒 ต้องล็อกอินครู/Admin ก่อน');
@@ -1320,6 +1412,191 @@ async function delWork(sheetName,row,btn){
     else alert('ลบไม่สำเร็จ: '+e.message);
   }
   if(btn){ btn.dataset.busy='0'; btn.disabled=false; btn.classList.remove('opacity-60'); }
+}
+
+// ---------- ตรวจพร้อมกันในหน้าตรวจ (ติ๊กเดี่ยว/ทั้งหมด + คะแนนเท่ากันได้) ----------
+function toggleCheckBatch(el){
+  const k = (el.dataset.sheet || 'ผลงาน') + '||' + el.dataset.row;
+  if(el.checked) C_BATCH.add(k); else C_BATCH.delete(k);
+  updateCheckBatchBar();
+}
+function clearCheckBatch(){ C_BATCH.clear(); updateCheckBatchBar(); renderCheck(); }
+function updateCheckBatchBar(){
+  C_BATCH.forEach(k=>{
+    const sep = k.lastIndexOf('||');
+    if(!ALL.some(r=>String(r.sheetName)===k.slice(0,sep) && Number(r.row)===Number(k.slice(sep+2)))) C_BATCH.delete(k);
+  });
+  const bar = document.getElementById('chkBatchBar'); if(!bar) return;
+  bar.classList.toggle('hidden', !C_BATCH.size);
+  const c = document.getElementById('chkBatchCount'); if(c) c.textContent = `เลือก ${C_BATCH.size} ชิ้น`;
+}
+function selectAllCheck(){
+  C_FILTERED.forEach(r=>C_BATCH.add((r.sheetName||'ผลงาน')+'||'+r.row));
+  updateCheckBatchBar(); renderCheck();
+}
+async function gradeBatchCheck(btn){
+  if(!ADMIN) return alert('🔒 ต้องล็อกอินครู/Admin ก่อน');
+  if(!C_BATCH.size) return;
+  const status = document.getElementById('chkBatchStatus').value;
+  const comment = document.getElementById('chkBatchComment').value.trim();
+  const score = document.getElementById('chkBatchScore').value.trim();
+  if(score && !/^-?\d+(\.\d+)?$/.test(score)) return alert('คะแนนต้องเป็นตัวเลข (หรือเว้นว่างไว้)');
+  if(!confirm(`บันทึก ${C_BATCH.size} ชิ้นเป็น "${status}"${score?` คะแนน ${score} เท่ากัน`:''}${comment?` พร้อมความเห็นเดียวกัน`:''} ?`)) return;
+  if(btn){ if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true; }
+  try{
+    const items = [];
+    C_BATCH.forEach(k=>{
+      const sep = k.lastIndexOf('||');
+      const ref = ALL.find(r=>String(r.sheetName)===k.slice(0,sep) && Number(r.row)===Number(k.slice(sep+2)));
+      if(!ref || !canGradeSubject(ref.subject)) return;
+      const it = {row:ref.row, sheetName:ref.sheetName, ...termKeys(ref), status, expectFullName:ref.fullName, expectTitle:ref.title};
+      if(comment) it.comment = comment;
+      if(score) it.score = score;
+      items.push(it);
+    });
+    if(!items.length) throw new Error('ไม่มีชิ้นที่ตรวจได้ในที่เลือก');
+    const j = await adminPost({action:'gradeMany', items});
+    applyGradeManyResults(j, C_BATCH, updateCheckBatchBar);
+  }catch(e){ alert('❌ '+e.message); }
+  if(btn){ btn.dataset.busy='0'; btn.disabled=false; }
+}
+// ---------- ใบสั่งงาน CRUD (ครูเฉพาะวิชาตัวเอง / Admin ทุกวิชา) ----------
+function fillChkAssign(){
+  const el = document.getElementById('chkAssign'); if(!el) return;
+  const keep = el.value;
+  const mine = isTeacher() ? teacherSubjects() : null;
+  const list = ASSIGNMENTS.filter(a=>!mine || mine.includes(a.subject));
+  el.innerHTML = '<option value="">ทุกใบสั่งงาน</option><option value="none">— ไม่ผูกใบสั่งงาน —</option>' +
+    list.map(a=>`<option value="${esc(a.id)}">${esc(a.subject)} — ${esc(a.title)}${a.active?'':' (ปิดรับ)'}</option>`).join('');
+  if([...el.options].some(o=>o.value===keep)) el.value = keep;
+}
+function fillAssignOptions(){
+  const el = document.getElementById('fAssign'); if(!el) return;
+  const keep = el.value;
+  const open = ASSIGNMENTS.filter(a=>a.active);
+  const shut = ASSIGNMENTS.filter(a=>!a.active);
+  const opt = a=>`<option value="${esc(a.id)}">${esc(a.subject)} — ${esc(a.title)}${a.dueAt?` (ส่ง ${esc(fmtDue(a.dueAt))})`:''}</option>`;
+  el.innerHTML = '<option value="">— ส่งอิสระ (ไม่ผูกใบสั่งงาน) —</option>' +
+    (open.length ? `<optgroup label="เปิดรับอยู่">${open.map(opt).join('')}</optgroup>` : '') +
+    (shut.length ? `<optgroup label="ปิดรับแล้ว">${shut.map(opt).join('')}</optgroup>` : '');
+  if(ASSIGNMENTS.some(a=>String(a.id)===String(keep))) el.value = keep;
+  else el.value = '';
+  updateAssignInfo();
+}
+function updateAssignInfo(){
+  const info = document.getElementById('assignInfo'); if(!info) return;
+  const a = asgById(document.getElementById('fAssign').value);
+  if(!a){ info.textContent = ''; return; }
+  const late = a.dueAt && parseDue(a.dueAt) && Date.now() > parseDue(a.dueAt);
+  info.innerHTML = `📌 ${esc(a.title)} • ${esc(a.subject)}${a.dueAt?` • กำหนดส่ง ${esc(fmtDue(a.dueAt))}`:''}${late?' • <b class="text-red-600">เลยกำหนดแล้ว (ยังส่งได้)</b>':''}${!a.active?' • <b class="text-red-600">ปิดรับแล้ว — ส่งจะถูกปฏิเสธ</b>':''}`;
+}
+function onAssignChange(){
+  const a = asgById(document.getElementById('fAssign').value);
+  updateAssignInfo();
+  if(!a) return;
+  const fs = document.getElementById('fSubject');
+  if(fs && [...fs.options].some(o=>o.value===a.subject)) fs.value = a.subject;
+  const ti = document.querySelector('#submitForm [name="title"]');
+  if(ti && !ti.value.trim()) ti.value = a.title;
+}
+function toggleAssignForm(){
+  const f = document.getElementById('assignForm');
+  const opening = f.classList.contains('hidden');
+  f.classList.toggle('hidden');
+  if(opening && !EDIT_ASG_ID){
+    const d = new Date(), p = n=>String(n).padStart(2,'0');
+    const now = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    if(!document.getElementById('asgAssigned').value) document.getElementById('asgAssigned').value = now;
+  }
+}
+function renderAssignBlock(){
+  const box = document.getElementById('assignBox'); if(!box) return;
+  box.classList.toggle('hidden', !ADMIN);
+  if(!ADMIN) return;
+  const ss = document.getElementById('asgSubject');
+  const keep = ss.value;
+  const list = myAssignSubjects();
+  ss.innerHTML = list.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  if(list.includes(keep)) ss.value = keep;
+  document.getElementById('assignCancelBtn').classList.toggle('hidden', !EDIT_ASG_ID);
+  const mine = isTeacher() ? teacherSubjects() : null;
+  const items = ASSIGNMENTS.filter(a=>!mine || mine.includes(a.subject));
+  document.getElementById('assignList').innerHTML = items.map(a=>{
+    const works = ALL.filter(r=>String(r.assignmentId||'')===String(a.id));
+    const graded = works.filter(r=>r.status!=='รอตรวจ').length;
+    const over = a.dueAt && parseDue(a.dueAt) && Date.now() > parseDue(a.dueAt);
+    return `<div class="border rounded-xl px-3 py-2 text-sm ${a.active?'':'opacity-60'}">
+      <div class="flex justify-between items-center gap-2 flex-wrap">
+        <span><span class="badge bg-blue-100 text-blue-700">${esc(a.subject)}</span> <b>${esc(a.title)}</b>
+        ${a.active?'<span class="badge bg-emerald-100 text-emerald-700">เปิดรับ</span>':'<span class="badge bg-slate-200 text-slate-500">ปิดรับ</span>'}
+        ${over?'<span class="badge bg-red-100 text-red-700">เลยกำหนดส่ง</span>':''}</span>
+        <span class="flex gap-2">
+          <button onclick="toggleAssignActive('${esc(a.id)}')" class="text-amber-600 text-xs">${a.active?'⏸ ปิดรับ':'▶ เปิดรับ'}</button>
+          <button onclick="editAssignUI('${esc(a.id)}')" class="text-blue-600 text-xs">✏️ แก้ไข</button>
+          <button onclick="delAssign('${esc(a.id)}')" class="text-red-500 text-xs">ลบ</button>
+        </span>
+      </div>
+      <p class="text-xs text-slate-500 mt-1">📅 สั่ง ${esc(fmtDue(a.assignedAt)||'—')} • ⏰ ส่ง ${esc(fmtDue(a.dueAt)||'—')} • โดย ${esc(a.createdBy||'')} • ส่งแล้ว ${works.length} ชิ้น (ตรวจแล้ว ${graded})</p>
+      ${a.description?`<p class="text-xs mt-1 text-slate-600">${esc(a.description)}</p>`:''}
+    </div>`;
+  }).join('') || '<p class="text-xs text-slate-400">ยังไม่มีใบสั่งงาน — กด “＋ สั่งงานใหม่” ด้านบน</p>';
+}
+async function saveAssignment(btn){
+  if(!ADMIN) return alert('🔒 ต้องล็อกอินครู/Admin ก่อน');
+  const subject = document.getElementById('asgSubject').value;
+  const title = document.getElementById('asgTitle').value.trim();
+  const description = document.getElementById('asgDesc').value.trim();
+  const assignedAt = document.getElementById('asgAssigned').value.replace('T',' ');
+  const dueAt = document.getElementById('asgDue').value.replace('T',' ');
+  const active = document.getElementById('asgActive').checked ? '1' : '0';
+  if(!subject || !title) return alert('กรุณาเลือกวิชา + กรอกชื่องานที่สั่ง');
+  if(btn){ if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true; }
+  try{
+    if(EDIT_ASG_ID){
+      const cur = asgById(EDIT_ASG_ID);
+      if(!cur) throw new Error('ไม่พบใบสั่งงานนี้แล้ว');
+      await adminPost({action:'editAssignment', row:cur.row, subject, title, description, assignedAt, dueAt, active});
+    }else{
+      await adminPost({action:'addAssignment', subject, title, description, assignedAt, dueAt, active});
+    }
+    clearAssignForm(); await softRefresh(); renderAssignBlock(); fillChkAssign();
+    alert('✅ บันทึกใบสั่งงานแล้ว');
+  }catch(e){ alert('❌ '+e.message); }
+  if(btn){ btn.dataset.busy='0'; btn.disabled=false; }
+}
+function clearAssignForm(){
+  EDIT_ASG_ID = null;
+  ['asgTitle','asgDesc','asgAssigned','asgDue'].forEach(id=>{document.getElementById(id).value='';});
+  document.getElementById('asgActive').checked = true;
+  document.getElementById('assignForm').classList.add('hidden');
+  document.getElementById('assignCancelBtn').classList.add('hidden');
+}
+function cancelAssignEdit(){ clearAssignForm(); }
+function editAssignUI(id){
+  const a = asgById(id); if(!a) return;
+  EDIT_ASG_ID = id;
+  renderAssignBlock();
+  document.getElementById('asgSubject').value = a.subject;
+  document.getElementById('asgTitle').value = a.title;
+  document.getElementById('asgDesc').value = a.description || '';
+  document.getElementById('asgAssigned').value = String(a.assignedAt||'').replace(' ','T').slice(0,16);
+  document.getElementById('asgDue').value = String(a.dueAt||'').replace(' ','T').slice(0,16);
+  document.getElementById('asgActive').checked = a.active;
+  document.getElementById('assignForm').classList.remove('hidden');
+  document.getElementById('assignCancelBtn').classList.remove('hidden');
+  document.getElementById('assignForm').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+async function delAssign(id){
+  const a = asgById(id); if(!a) return;
+  const n = ALL.filter(r=>String(r.assignmentId||'')===String(id)).length;
+  if(!confirm(`ลบใบสั่งงาน "${a.title}" ?\n(งานนักเรียนที่ส่งแล้ว ${n} ชิ้นจะไม่ถูกลบ แค่หลุดจากใบสั่ง)`)) return;
+  try{ await adminPost({action:'deleteAssignment', row:a.row}); if(EDIT_ASG_ID===id) clearAssignForm(); await softRefresh(); renderAssignBlock(); fillChkAssign(); }
+  catch(e){ alert('❌ '+e.message); }
+}
+async function toggleAssignActive(id){
+  const a = asgById(id); if(!a) return;
+  try{ await adminPost({action:'editAssignment', row:a.row, subject:a.subject, title:a.title, description:a.description||'', assignedAt:a.assignedAt||'', dueAt:a.dueAt||'', active:a.active?'0':'1'}); await softRefresh(); renderAssignBlock(); fillChkAssign(); }
+  catch(e){ alert('❌ '+e.message); }
 }
 
 // ===== TEACHER DASHBOARD (แดชบอร์ดวิชา + ส่งงานรายคน + ตรวจรายบุคคล) =====
@@ -1407,7 +1684,7 @@ function teacherTableHTML(rows){
         <td class="px-2 py-1.5 whitespace-nowrap">${statusBadge(r.status)} ${scoreBadge(r.score)}</td>
         <td class="px-2 py-1.5"><div class="flex items-center gap-1"><button onclick="stepScore('${scId}',-1)" class="w-7 h-7 rounded-lg bg-slate-100 text-sm font-bold" title="ลด 1">−</button><input id="${scId}" value="${esc(r.score||'')}" inputmode="decimal" placeholder="—" title="คะแนน (ตัวเลข)" class="border rounded-lg px-1 py-1 text-sm w-14 text-center"><button onclick="stepScore('${scId}',1)" class="w-7 h-7 rounded-lg bg-slate-100 text-sm font-bold" title="เพิ่ม 1">+</button></div></td>
         <td class="px-2 py-1.5"><input id="${cmtId}" value="${esc(r.comment||'')}" placeholder="ความเห็น..." class="border rounded-lg px-2 py-1 text-sm w-36"></td>
-        <td class="px-2 py-1.5 whitespace-nowrap"><button data-busy="0" onclick="setStatus('${sn}',${r.row},'ผ่าน',this,'bcmt-')" class="px-2 py-1 rounded-lg bg-emerald-600 text-white text-xs disabled:opacity-50">✅</button> <button data-busy="0" onclick="setStatus('${sn}',${r.row},'ต้องแก้ไข',this,'bcmt-')" class="px-2 py-1 rounded-lg bg-red-500 text-white text-xs disabled:opacity-50">✏️</button></td>
+        <td class="px-2 py-1.5 whitespace-nowrap"><button data-busy="0" onclick="setStatus('${sn}',${r.row},'ผ่าน',this,'bcmt-')" class="px-2 py-1 rounded-lg bg-emerald-600 text-white text-xs disabled:opacity-50">✅</button> <button data-busy="0" onclick="setStatus('${sn}',${r.row},'ต้องแก้ไข',this,'bcmt-')" class="px-2 py-1 rounded-lg bg-red-500 text-white text-xs disabled:opacity-50">✏️</button>${groupMates(r).length?` <button data-busy="0" onclick="gradeGroup('${sn}',${r.row},'ผ่าน',this,'bcmt-')" title="ผ่านทั้งกลุ่ม ${groupMates(r).length+1} ชิ้น" class="px-2 py-1 rounded-lg bg-teal-600 text-white text-xs disabled:opacity-50">👥✅</button>`:''}</td>
       </tr>`;
     }).join('')}</tbody></table></div></div>`;
 }
@@ -1440,6 +1717,7 @@ function renderTeacherStudentDetail(){
           <input id="tsc-${esc(r.sheetName||'')}-${r.row}" value="${esc(r.score||'')}" inputmode="decimal" placeholder="⭐ คะแนน" title="คะแนน (ตัวเลข ว่างได้)" class="border rounded-xl px-3 py-1.5 text-sm w-24">
           <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ผ่าน',this,'tcmt-')" class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-sm disabled:opacity-50">✅ ผ่าน</button>
           <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ต้องแก้ไข',this,'tcmt-')" class="px-3 py-1.5 rounded-xl bg-red-500 text-white text-sm disabled:opacity-50">✏️ แก้ไข</button>
+          ${groupMates(r).length?`<button data-busy="0" onclick="gradeGroup('${esc(r.sheetName||'ผลงาน')}',${r.row},'ผ่าน',this,'tcmt-')" title="ผ่านทั้งกลุ่ม ${groupMates(r).length+1} ชิ้น" class="px-3 py-1.5 rounded-xl bg-teal-600 text-white text-sm disabled:opacity-50">👥✅ ทั้งกลุ่ม</button>`:''}
         </div>
       </div></div>`;
   }).join('') || '<p class="text-sm text-slate-400">คนนี้ยังไม่มีงานในวิชาของคุณ</p>');
@@ -1489,17 +1767,48 @@ async function gradeBatch(btn){
     });
     if(!items.length) throw new Error('ไม่มีชิ้นที่ตรวจได้ในที่เลือก (อาจเป็นวิชาอื่น)');
     const j = await adminPost({action:'gradeMany', items});
-    (j.results || []).forEach(res=>{
-      if(!res.ok) return;
-      const it = ALL.find(r=>String(r.sheetName)===String(res.sheetName) && Number(r.row)===Number(res.row));
-      if(it){ it.status = res.status || it.status; if(res.hasComment) it.comment = res.comment; if(res.hasScore) it.score = res.score; if(res.gradedBy) it.gradedBy = res.gradedBy; }
-    });
-    const bad = (j.results || []).filter(r=>!r.ok);
-    T_BATCH.clear();
-    updateBatchBar(); renderTeacherDash();
-    alert(`✅ บันทึกแล้ว ${j.graded}/${j.total} ชิ้น` + (bad.length ? `\n❌ ไม่สำเร็จ ${bad.length} ชิ้น:\n` + bad.slice(0,5).map(b=>`• แถว ${b.row}: ${b.error}`).join('\n') : ''));
+    applyGradeManyResults(j, T_BATCH, updateBatchBar);
   }catch(e){ alert('❌ '+e.message); }
   if(btn){ btn.dataset.busy='0'; btn.disabled=false; }
+}
+// ใช้ผล gradeMany อัปเดตข้อมูลในจอ + แจ้งสรุป (ใช้ร่วมกันทั้งตรวจพร้อมกันและตรวจทั้งกลุ่ม)
+function applyGradeManyResults(j, setToClear, afterBar){
+  (j.results || []).forEach(res=>{
+    if(!res.ok) return;
+    const it = ALL.find(r=>String(r.sheetName)===String(res.sheetName) && Number(r.row)===Number(res.row));
+    if(it){ it.status = res.status || it.status; if(res.hasComment) it.comment = res.comment; if(res.hasScore) it.score = res.score; if(res.gradedBy) it.gradedBy = res.gradedBy; }
+  });
+  const bad = (j.results || []).filter(r=>!r.ok);
+  if(setToClear) setToClear.clear();
+  if(afterBar) afterBar();
+  renderActive();
+  alert(`✅ บันทึกแล้ว ${j.graded}/${j.total} ชิ้น` + (bad.length ? `\n❌ ไม่สำเร็จ ${bad.length} ชิ้น:\n` + bad.slice(0,5).map(b=>`• แถว ${b.row}: ${b.error}`).join('\n') : ''));
+}
+// ---------- ตรวจทั้งกลุ่ม (งานกลุ่มชิ้นเดียวกันทุกสมาชิกในครั้งเดียว) ----------
+async function gradeGroup(sheetName,row,status,btn,cmtPrefix){
+  if(!ADMIN) return alert('🔒 ต้องล็อกอินครู/Admin ก่อน');
+  const ref = ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row));
+  if(!ref) return;
+  if(!canGradeSubject(ref.subject)) return alert('🔒 วิชา "'+ref.subject+'" ไม่ใช่ของคุณ');
+  const mates = groupMates(ref).filter(m=>canGradeSubject(m.subject));
+  const all = [ref, ...mates];
+  if(btn){ if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true; btn.classList.add('opacity-60'); }
+  try{
+    const cmt = ((document.getElementById((cmtPrefix||'cmt-')+sheetName+'-'+row)?.value) || '').trim();
+    const scPre = (cmtPrefix||'cmt-').replace('cmt','sc');
+    const sc = ((document.getElementById(scPre+sheetName+'-'+row)?.value) || '').trim();
+    if(sc && !/^-?\d+(\.\d+)?$/.test(sc)) throw new Error('คะแนนต้องเป็นตัวเลข (หรือเว้นว่างไว้)');
+    if(!confirm(`ตรวจทั้งกลุ่ม ${all.length} ชิ้น ("${ref.title}") เป็น "${status}"${sc?` คะแนน ${sc}`:''} ?`)) return;
+    const items = all.map(m=>{
+      const it = {row:m.row, sheetName:m.sheetName, ...termKeys(m), status, expectFullName:m.fullName, expectTitle:m.title};
+      if(cmt) it.comment = cmt;
+      if(sc) it.score = sc;
+      return it;
+    });
+    const j = await adminPost({action:'gradeMany', items});
+    applyGradeManyResults(j, null, null);
+  }catch(e){ alert('❌ '+e.message); }
+  if(btn){ btn.dataset.busy='0'; btn.disabled=false; btn.classList.remove('opacity-60'); }
 }
 // ---------- สรุปตามชั้นเรียน > ชิ้นงาน > คะแนนรายคน ----------
 function renderTeacherSummary(){
@@ -1564,6 +1873,14 @@ wirePair('chkClass','chkName','chkSubject',renderCheck);
 document.getElementById('tDashClass').onchange = ()=>{ renderTeacherDash(); };
 document.getElementById('tDashStudent').onchange = ()=>{ renderTeacherStudentDetail(); };
 document.getElementById('tSumClass').onchange = ()=>{ renderTeacherDash(); };
+document.getElementById('fAssign').onchange = onAssignChange;
+document.getElementById('fSubject').onchange = ()=>{
+  const a = asgById(document.getElementById('fAssign').value);
+  if(a && document.getElementById('fSubject').value !== a.subject){
+    document.getElementById('fAssign').value = '';
+    updateAssignInfo();
+  }
+};
 const dDash = debounce(()=>{ resetPageLimit(renderDash); renderDash(); }, 250);
 const dPad = debounce(()=>{ PAD_LIMIT=PAD_STEP; renderPadlet(); }, 250);
 const dSum = debounce(()=>{ SUM_LIMIT=SUM_STEP; renderSummary(); }, 250);
@@ -1574,7 +1891,7 @@ document.getElementById('dashSearch').oninput=dDash;
 document.getElementById('padSearch').oninput=dPad;
 ['sumSubject','sumYear','sumTerm'].forEach(id=>document.getElementById(id).onchange=()=>{ SUM_LIMIT=SUM_STEP; renderSummary(); });
 document.getElementById('sumSearch').oninput=dSum;
-['chkCategory','chkSubject','chkStatus','chkYear','chkTerm'].forEach(id=>document.getElementById(id).onchange=()=>{ CHK_LIMIT=CHK_STEP; renderCheck(); });
+['chkCategory','chkSubject','chkStatus','chkYear','chkTerm','chkAssign'].forEach(id=>document.getElementById(id).onchange=()=>{ CHK_LIMIT=CHK_STEP; renderCheck(); });
 document.getElementById('chkSearch').oninput=dChk;
 document.getElementById('adPass')?.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 
