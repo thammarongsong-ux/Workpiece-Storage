@@ -26,7 +26,7 @@ const CONFIG = {
   TEACHER_HEADERS: ['USER', 'PASS', 'ชื่อครู', 'วิชาที่สอน (comma คั่น)'],
   ADMIN_USER: 'FirstStar',
   ADMIN_PASS: '574001',
-  VERSION: 'term-5', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
+  VERSION: 'term-7', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
   HEADERS: [
     'Timestamp','ชื่อ-สกุล','ชั้น/ห้อง','วิชา','ประเภทงาน','ชื่อชิ้นงาน',
     'คำอธิบาย','ชนิดไฟล์','ชื่อไฟล์','File URL','Drive File ID','สถานะตรวจ','ความเห็นครู',
@@ -268,6 +268,22 @@ function parseClasses_(v) {
   return out;
 }
 
+/** ---------- กันส่งงานซ้ำ (กดเบิ้ล/เน็ต timeout แล้วกดใหม่) ---------- */
+// Frontend สร้าง submitId ใหม่ทุกครั้งที่กรอกฟอร์มใหม่ แต่ใช้รหัสเดิมเมื่อกด "ส่งอีกครั้ง"
+// backend จำผลลัพธ์สำเร็จไว้ใน ScriptCache 6 ชม. เจอรหัสเดิม = คืนผลเดิม ไม่สร้างไฟล์/แถวใหม่
+function submitCacheGet_(sid) {
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(String(sid || ''))) return null;
+  try {
+    const s = CacheService.getScriptCache().get('sid_' + sid);
+    return s ? JSON.parse(s) : null;
+  } catch (e) { return null; }
+}
+
+function submitCachePut_(sid, obj) {
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(String(sid || ''))) return;
+  try { CacheService.getScriptCache().put('sid_' + sid, JSON.stringify(obj), 21600); } catch (e) {}
+}
+
 // GET ?action=init (รวม list+config ในครั้งเดียว เร็วสุด) | ?action=list[&year=&semester=] | ?action=listConfig | ?action=ping | ?action=terms
 function doGet(e) {
   try {
@@ -302,9 +318,30 @@ function getBootstrap_(yearFilter, semFilter) {
 }
 
 // POST {action:'submit'|'updateStatus'|'login'|'addSubject'|'editSubject'|'deleteSubject'|'addStudent'|'editStudent'|'deleteStudent'|'deleteWork'|'listTeachers'|'addTeacher'|'editTeacher'|'deleteTeacher', ..., academicYear, semester}
+// งานเขียน (submit/ตรวจ/ลบ/จัดการ) ต้องผ่าน ScriptLock ใน doPost — รายชื่อนี้บอกว่า action ไหนต้องเข้าคิว
+var WRITE_ACTIONS = {submit:1,updateStatus:1,deleteWork:1,backfillTerm:1,addSubject:1,editSubject:1,deleteSubject:1,addStudent:1,editStudent:1,deleteStudent:1,addTeacher:1,editTeacher:1,deleteTeacher:1};
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
+    // งานเขียนทุกชนิดต้องเข้าคิวด้วย ScriptLock (กันหลายคนกดพร้อมกันแล้วข้อมูลพันกัน:
+    // โฟลเดอร์ซ้ำ, แถวซ้อน, เช็คซ้ำแล้วเขียนทับกัน) — งานอ่าน (login/list/init) ไม่ล็อก เร็วเหมือนเดิม
+    if (WRITE_ACTIONS[data.action]) {
+      const lock = LockService.getScriptLock();
+      const got = lock.tryLock(10000);
+      if (!got) return jsonOut_({ ok: false, busy: true, error: 'มีผู้ใช้งานพร้อมกันเยอะ ระบบให้คิวไม่ทัน กรุณากดลองใหม่อีกครั้ง' });
+      try {
+        return dispatchPost_(data);
+      } finally {
+        try { lock.releaseLock(); } catch (x) {}
+      }
+    }
+    return dispatchPost_(data);
+  } catch (err) {
+    return jsonOut_({ ok: false, error: String(err && err.stack || err) });
+  }
+}
+
+function dispatchPost_(data) {
     if (data.action === 'submit') return submitWork_(data);
     if (data.action === 'login') {
       return login_(data);
@@ -323,9 +360,6 @@ function doPost(e) {
     if (data.action === 'editTeacher') return editTeacher_(data);
     if (data.action === 'deleteTeacher') return deleteTeacher_(data);
     return jsonOut_({ ok: false, error: 'unknown action' });
-  } catch (err) {
-    return jsonOut_({ ok: false, error: String(err && err.stack || err) });
-  }
 }
 
 /** ดึงรายชื่อวิชา + นักเรียน จาก Sheet (สาธารณะ อ่านได้อย่างเดียว) */
@@ -500,8 +534,13 @@ function submitWork_(d) {
     const perm = canGradeSubject_(d, subject);
     if (!perm.ok) return jsonOut_({ ok: false, error: perm.error || 'บัญชีครูไม่ถูกต้อง' });
   }
+  // เคยสำเร็จด้วยรหัสนี้แล้ว (กดเบิ้ล/timeout แล้วกดซ้ำ) = คืนผลเดิม ไม่สร้างไฟล์+แถวใหม่
+  const sid = String(d.submitId || '');
+  const dup = submitCacheGet_(sid);
+  if (dup) { dup.duplicate = true; return jsonOut_(dup); }
+  // สุ่มท้ายรหัสกลุ่ม กัน 2 กลุ่มส่งวินาทีเดียวกันแล้วรหัสชนกัน (สมาชิกจะปนกันในหน้า Padlet)
   const groupId = members.length > 1
-    ? ('G' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMddHHmmss'))
+    ? ('G' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMddHHmmss') + Math.random().toString(36).slice(2, 5))
     : '';
   // กันเลือกวิชาผิดห้อง (เช็คทุกคนในกลุ่ม — ชื่อวิชาซ้ำต่างห้องผ่านถ้าห้องใดห้องหนึ่งตรง)
   // เปิด SS ครั้งเดียวแล้วใช้ซ้ำถึงตอน appendRow (ลด cold-start ~1-2 วิ กัน timeout ตอนส่ง)
@@ -560,7 +599,9 @@ function submitWork_(d) {
     ws.appendRow([now, m.fullName, m.classroom, subject, category, title,
       String(d.description || ''), fileKind, fileName, fileUrl, driveFileId, 'รอตรวจ', '', term.year, term.semester, groupId]);
   });
-  return jsonOut_({ ok: true, fileUrl: fileUrl, driveFileId: driveFileId, academicYear: term.year, semester: term.semester, sheetName: term.sheetName, groupId: groupId, rows: members.length, isGroup: members.length > 1 });
+  const resp = { ok: true, fileUrl: fileUrl, driveFileId: driveFileId, academicYear: term.year, semester: term.semester, sheetName: term.sheetName, groupId: groupId, rows: members.length, isGroup: members.length > 1 };
+  submitCachePut_(sid, resp); // จำผลไว้กันกดซ้ำ
+  return jsonOut_(resp);
 }
 
 /** ครูตรวจงาน (Admin ทุกวิชา / ครูเฉพาะวิชาที่สอน) — ต้องส่ง sheetName/termId/year+semester มาด้วย (ของเก่าส่งแค่ row = คลังเดิม) */
@@ -572,8 +613,14 @@ function updateStatus_(d) {
   if (['รอตรวจ', 'ผ่าน', 'ต้องแก้ไข'].indexOf(status) < 0) return jsonOut_({ ok: false, error: 'status ไม่ถูกต้อง' });
   const sh = resolveWorksSheet_(d);
   if (row > sh.getLastRow()) return jsonOut_({ ok: false, error: 'ไม่พบแถวนี้ในชีต ' + sh.getName() });
+  // อ่านตัวตนของแถว (B..F) ครั้งเดียว: ใช้ทั้งเช็คสิทธิ์ + เช็คว่าแถวเลื่อนเพราะมีคนลบพร้อมกันหรือไม่
+  const idv = sh.getRange(row, 2, 1, 5).getValues()[0];
+  const expN = String(d.expectFullName || ''), expT = String(d.expectTitle || '');
+  if ((expN && String(idv[0] || '') !== expN) || (expT && String(idv[4] || '') !== expT)) {
+    return jsonOut_({ ok: false, stale: true, error: 'ข้อมูลแถวนี้เปลี่ยนไปแล้ว (มีคนลบ/แก้ไขพร้อมกัน) กรุณากดรีเฟรชแล้วทำใหม่' });
+  }
   // เช็คสิทธิ์จากวิชาจริงในแถว (ไม่ใช้ค่าที่ client ส่งมา กันปลอม)
-  const subject = String(sh.getRange(row, 4).getValue() || '').trim();
+  const subject = String(idv[2] || '').trim();
   const perm = canGradeSubject_(d, subject);
   if (!perm.ok) return jsonOut_({ ok: false, error: perm.error || 'ต้องล็อกอินก่อน' });
   sh.getRange(row, 12).setValue(status);
@@ -588,6 +635,14 @@ function deleteWork_(d) {
   if (!row || row < 2) return jsonOut_({ ok: false, error: 'row ไม่ถูกต้อง' });
   const sh = resolveWorksSheet_(d);
   if (row > sh.getLastRow()) return jsonOut_({ ok: true, alreadyDeleted: true, row: row, sheetName: sh.getName() });
+  // กันลบผิดแถว: ถ้าชื่อ/ชื่องานไม่ตรงกับที่เห็นบนจอ = แถวเลื่อนเพราะมีคนลบพร้อมกัน ให้หยุดก่อน
+  const expN = String(d.expectFullName || ''), expT = String(d.expectTitle || '');
+  if (expN || expT) {
+    const idv = sh.getRange(row, 2, 1, 5).getValues()[0];
+    if ((expN && String(idv[0] || '') !== expN) || (expT && String(idv[4] || '') !== expT)) {
+      return jsonOut_({ ok: false, stale: true, error: 'ข้อมูลแถวนี้เปลี่ยนไปแล้ว (มีคนลบพร้อมกัน) กรุณากดรีเฟรชแล้วทำใหม่ — ยังไม่ได้ลบอะไร' });
+    }
+  }
   const fileId = String(sh.getRange(row, 11).getValue() || '').trim();
   // งานกลุ่มแชร์ไฟล์เดียวกัน: ลบไฟล์ใน Drive ก็ต่อเมื่อไม่มีแถวอื่นอ้างถึงแล้ว
   const canTrash = fileId && !fileStillUsed_(sh.getName(), row, fileId);
@@ -806,6 +861,8 @@ function addTeacher_(d) {
       if (String(col[i][0] || '').trim() === user) return jsonOut_({ ok: false, error: 'มี USER นี้แล้ว' });
     }
   }
+  const clash = teacherSubjectClash_(sh, subjects, 0);
+  if (clash) return jsonOut_({ ok: false, error: 'วิชา "' + clash.subject + '" มีครูใช้แล้ว (' + clash.name + ' @' + clash.user + ') 1 วิชา = 1 ครูเท่านั้น' });
   sh.appendRow([user, pass, name, subjects.join(', ')]);
   return jsonOut_({ ok: true, user: user, name: name, subjects: subjects });
 }
@@ -830,6 +887,8 @@ function editTeacher_(d) {
       return jsonOut_({ ok: false, error: 'มี USER นี้แล้ว (แถว ' + (i + 2) + ')' });
     }
   }
+  const clash = teacherSubjectClash_(sh, subjects, row);
+  if (clash) return jsonOut_({ ok: false, error: 'วิชา "' + clash.subject + '" มีครูใช้แล้ว (' + clash.name + ' @' + clash.user + ') 1 วิชา = 1 ครูเท่านั้น' });
   sh.getRange(row, 1, 1, 4).setValues([[user, pass, name, subjects.join(', ')]]);
   return jsonOut_({ ok: true, row: row, user: user, name: name, subjects: subjects });
 }
@@ -842,6 +901,23 @@ function deleteTeacher_(d) {
   if (!sh || row > sh.getLastRow()) return jsonOut_({ ok: true, alreadyDeleted: true, row: row });
   sh.deleteRow(row);
   return jsonOut_({ ok: true, row: row });
+}
+
+/** วิชาซ้ำข้ามบัญชีหรือไม่ (1 วิชา = 1 ครู) — คืน {subject,user,name} ที่ชน หรือ null */
+function teacherSubjectClash_(sh, subjects, excludeRow) {
+  if (!sh || sh.getLastRow() < 2 || !subjects || !subjects.length) return null;
+  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues();
+  for (let i = 0; i < vals.length; i++) {
+    if ((i + 2) === Number(excludeRow)) continue;
+    const user = String(vals[i][0] || '').trim();
+    if (!user) continue;
+    const name = String(vals[i][2] || '').trim() || user;
+    const has = parseClasses_(vals[i][3]);
+    for (let k = 0; k < subjects.length; k++) {
+      if (has.indexOf(subjects[k]) >= 0) return { subject: subjects[k], user: user, name: name };
+    }
+  }
+  return null;
 }
 
 function getOrCreateFolder_(parent, name) {
