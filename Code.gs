@@ -24,13 +24,15 @@ const CONFIG = {
   SHEET_STUDENTS: 'นักเรียน',
   SHEET_TEACHERS: 'ครู',
   TEACHER_HEADERS: ['USER', 'PASS', 'ชื่อครู', 'วิชาที่สอน (comma คั่น)'],
+  SHEET_ASSIGN: 'งานที่สั่ง',
+  ASSIGN_HEADERS: ['รหัสงาน', 'วิชา', 'ชื่อชิ้นงาน', 'คำอธิบาย', 'วันที่สั่ง', 'กำหนดส่ง', 'ผู้สั่ง', 'เปิดรับ'],
   ADMIN_USER: 'FirstStar',
   ADMIN_PASS: '574001',
-  VERSION: 'term-9', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
+  VERSION: 'term-10', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
   HEADERS: [
     'Timestamp','ชื่อ-สกุล','ชั้น/ห้อง','วิชา','ประเภทงาน','ชื่อชิ้นงาน',
     'คำอธิบาย','ชนิดไฟล์','ชื่อไฟล์','File URL','Drive File ID','สถานะตรวจ','ความเห็นครู',
-    'ปีการศึกษา','ภาคเรียน','รหัสกลุ่ม','ผู้ตรวจ','คะแนน'
+    'ปีการศึกษา','ภาคเรียน','รหัสกลุ่ม','ผู้ตรวจ','คะแนน','รหัสงานที่สั่ง'
   ],
   HEADERS_LEGACY_LEN: 13,
   DEFAULT_SUBJECTS: ['ภาษาไทย','คณิตศาสตร์','วิทยาศาสตร์','ภาษาอังกฤษ','สังคมศึกษา','ศิลปะ','การงานอาชีพ','สุขศึกษา/พละ','คอมพิวเตอร์']
@@ -93,6 +95,8 @@ function setupSheet() {
   getOrCreateSheet_(ss, CONFIG.SHEET_STUDENTS, ['ชื่อ-สกุล', 'ชั้น/ห้อง']);
   // ชีตบัญชีครู (USER/PASS/ชื่อ/วิชาที่สอน) — สร้างเปล่าไว้ก่อน Admin มากรอกเอง
   getOrCreateSheet_(ss, CONFIG.SHEET_TEACHERS, CONFIG.TEACHER_HEADERS);
+  // ชีตใบสั่งงาน (ครูกำหนดชื่องาน/วันสั่ง/กำหนดส่ง) — สร้างเปล่าไว้ก่อน
+  getOrCreateSheet_(ss, CONFIG.SHEET_ASSIGN, CONFIG.ASSIGN_HEADERS);
   // อัปเกรดหัวตารางชีตรายเทอมที่มีอยู่แล้ว (ถ้ามี)
   listTermSheets_().forEach(function(t) {
     const sh = ss.getSheetByName(t.sheetName);
@@ -101,7 +105,7 @@ function setupSheet() {
   Logger.log('setupSheet OK, current term: ' + cur.year + '/' + cur.semester);
 }
 
-/** เติม/อัปเกรดหัวตารางเป็น 18 คอลัมน์ (รองรับชีตเก่าโดยไม่ลบข้อมูล) */
+/** เติม/อัปเกรดหัวตารางเป็น 19 คอลัมน์ (รองรับชีตเก่าโดยไม่ลบข้อมูล) */
 function ensureHeaders_(sh) {
   if (!sh) return sh;
   if (sh.getLastRow() === 0) {
@@ -122,6 +126,7 @@ function ensureHeaders_(sh) {
     if (!h16) sh.getRange(1, 16).setValue(CONFIG.HEADERS[15]);
     try { if (!String(sh.getRange(1, 17).getValue() || '').trim()) sh.getRange(1, 17).setValue(CONFIG.HEADERS[16]); } catch (e) {}
     try { if (!String(sh.getRange(1, 18).getValue() || '').trim()) sh.getRange(1, 18).setValue(CONFIG.HEADERS[17]); } catch (e) {}
+    try { if (!String(sh.getRange(1, 19).getValue() || '').trim()) sh.getRange(1, 19).setValue(CONFIG.HEADERS[18]); } catch (e) {}
   }
   return sh;
 }
@@ -315,13 +320,14 @@ function getBootstrap_(yearFilter, semFilter) {
     ok: true,
     rows: data.rows, total: data.total,
     terms: data.terms, current: currentTerm_(),
-    subjects: cfg.subjects, subjectRows: cfg.subjectRows, students: cfg.students
+    subjects: cfg.subjects, subjectRows: cfg.subjectRows, students: cfg.students,
+    assignments: readAssignObj_(ss)
   });
 }
 
 // POST {action:'submit'|'updateStatus'|'login'|'addSubject'|'editSubject'|'deleteSubject'|'addStudent'|'editStudent'|'deleteStudent'|'deleteWork'|'listTeachers'|'addTeacher'|'editTeacher'|'deleteTeacher', ..., academicYear, semester}
 // งานเขียน (submit/ตรวจ/ลบ/จัดการ) ต้องผ่าน ScriptLock ใน doPost — รายชื่อนี้บอกว่า action ไหนต้องเข้าคิว
-var WRITE_ACTIONS = {submit:1,updateStatus:1,gradeMany:1,deleteWork:1,backfillTerm:1,addSubject:1,editSubject:1,deleteSubject:1,addStudent:1,editStudent:1,deleteStudent:1,addTeacher:1,editTeacher:1,deleteTeacher:1};
+var WRITE_ACTIONS = {submit:1,updateStatus:1,gradeMany:1,deleteWork:1,backfillTerm:1,addSubject:1,editSubject:1,deleteSubject:1,addStudent:1,editStudent:1,deleteStudent:1,addTeacher:1,editTeacher:1,deleteTeacher:1,addAssignment:1,editAssignment:1,deleteAssignment:1};
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
@@ -362,6 +368,10 @@ function dispatchPost_(data) {
     if (data.action === 'addTeacher') return addTeacher_(data);
     if (data.action === 'editTeacher') return editTeacher_(data);
     if (data.action === 'deleteTeacher') return deleteTeacher_(data);
+    if (data.action === 'listAssignments') return listAssignments_(data);
+    if (data.action === 'addAssignment') return addAssignment_(data);
+    if (data.action === 'editAssignment') return editAssignment_(data);
+    if (data.action === 'deleteAssignment') return deleteAssignment_(data);
     return jsonOut_({ ok: false, error: 'unknown action' });
 }
 
@@ -399,7 +409,7 @@ function readConfigObj_(ss) {
       .map(function(r, i) { return { row: i + 2, fullName: String(r[0] || '').trim(), classroom: String(r[1] || '').trim() }; })
       .filter(function(s) { return !!s.fullName; });
   }
-  return { subjects: subjects, subjectRows: subjectRows, students: students };
+  return { subjects: subjects, subjectRows: subjectRows, students: students, assignments: readAssignObj_(ss) };
 }
 
 /** ลิสต์ชีตงานทั้งหมดจาก ss ที่เปิดไว้แล้ว (ไม่เปิดใหม่ซ้ำ) */
@@ -454,6 +464,7 @@ function readWorksSheet_(sh, term) {
       groupId: String(r[15] || '').trim(),
       gradedBy: String(r[16] || '').trim(),
       score: String(r[17] || '').trim(),
+      assignmentId: String(r[18] || '').trim(),
       termId: term ? term.termId : (y && (s === '1' || s === '2') ? y + '_' + s : ''),
       sheetName: sheetName,
       termLabel: term ? termLabel_(term.year, term.semester) : (y && s ? termLabel_(y, s) : 'คลังเดิม (ก่อนแยกเทอม)')
@@ -571,6 +582,14 @@ function submitWork_(d) {
       }
     }
   } catch (e) { }
+  // ผูกใบสั่งงาน (ถ้าเลือกมา): ต้องมีจริง + วิชาตรง + ยังเปิดรับ — เช็คก่อนอัปโหลดไฟล์(แพง)
+  const assignId = String(d.assignmentId || '').trim();
+  if (assignId) {
+    const asg = findAssign_(getAssignSheet_(ss), assignId);
+    if (!asg) return jsonOut_({ ok: false, error: 'ไม่พบงานที่สั่งนี้แล้ว กรุณารีเฟรชแล้วเลือกใหม่' });
+    if (asg.subject !== subject) return jsonOut_({ ok: false, error: 'งานที่สั่งนี้เป็นวิชา "' + asg.subject + '" ไม่ตรงกับวิชาที่เลือก' });
+    if (!asg.active) return jsonOut_({ ok: false, error: 'งาน "' + asg.title + '" ปิดรับแล้ว' });
+  }
   const fileKind = (d.fileKind || 'image');
   let fileUrl = '';
   let driveFileId = '';
@@ -602,7 +621,7 @@ function submitWork_(d) {
   const ws = ensureHeaders_(getOrCreateSheet_(ss, term.sheetName, CONFIG.HEADERS));
   members.forEach(function(m) {
     ws.appendRow([now, m.fullName, m.classroom, subject, category, title,
-      String(d.description || ''), fileKind, fileName, fileUrl, driveFileId, 'รอตรวจ', '', term.year, term.semester, groupId]);
+      String(d.description || ''), fileKind, fileName, fileUrl, driveFileId, 'รอตรวจ', '', term.year, term.semester, groupId, assignId]);
   });
   const resp = { ok: true, fileUrl: fileUrl, driveFileId: driveFileId, academicYear: term.year, semester: term.semester, sheetName: term.sheetName, groupId: groupId, rows: members.length, isGroup: members.length > 1 };
   submitCachePut_(sid, resp); // จำผลไว้กันกดซ้ำ
@@ -981,7 +1000,104 @@ function deleteTeacher_(d) {
   return jsonOut_({ ok: true, row: row });
 }
 
-/** วิชาซ้ำข้ามบัญชีหรือไม่ (1 วิชา = 1 ครู) — คืน {subject,user,name} ที่ชน หรือ null */
+/** ---------- ใบสั่งงาน (ครูกำหนดชื่องาน/วันสั่ง/กำหนดส่ง) ---------- */
+
+function getAssignSheet_(ss) {
+  const s = ss || SpreadsheetApp.openById(CONFIG.SHEET_ID);
+  return getOrCreateSheet_(s, CONFIG.SHEET_ASSIGN, CONFIG.ASSIGN_HEADERS);
+}
+
+/** อ่านใบสั่งงานทั้งหมด (สาธารณะ — หน้านักเรียนต้องเห็นเพื่อเลือกส่ง) */
+function readAssignObj_(ss) {
+  const sh = getAssignSheet_(ss);
+  const out = [];
+  if (sh && sh.getLastRow() >= 2) {
+    const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 8).getValues();
+    vals.forEach(function(r, i) {
+      const id = String(r[0] || '').trim();
+      if (id) out.push({ row: i + 2, id: id, subject: String(r[1] || '').trim(), title: String(r[2] || '').trim(),
+        description: String(r[3] || ''), assignedAt: String(r[4] || '').trim(), dueAt: String(r[5] || '').trim(),
+        createdBy: String(r[6] || '').trim(), active: String(r[7] || '').trim() !== '0' });
+    });
+  }
+  return out;
+}
+
+function listAssignments_(d) {
+  return jsonOut_({ ok: true, assignments: readAssignObj_(SpreadsheetApp.openById(CONFIG.SHEET_ID)) });
+}
+
+function findAssign_(sh, id) {
+  id = String(id || '').trim();
+  if (!id || !sh || sh.getLastRow() < 2) return null;
+  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 8).getValues();
+  for (let i = 0; i < vals.length; i++) {
+    if (String(vals[i][0] || '').trim() === id) {
+      return { row: i + 2, id: id, subject: String(vals[i][1] || '').trim(), title: String(vals[i][2] || '').trim(),
+        description: String(vals[i][3] || ''), assignedAt: String(vals[i][4] || '').trim(), dueAt: String(vals[i][5] || '').trim(),
+        createdBy: String(vals[i][6] || '').trim(), active: String(vals[i][7] || '').trim() !== '0' };
+    }
+  }
+  return null;
+}
+
+/** สิทธิ์ใบสั่งงาน: admin ทุกวิชา / ครูเฉพาะวิชาตัวเอง (ทั้งตอนสร้างและตอนแก้) */
+function canManageAssign_(d, subject) {
+  if (isAdmin_(d)) return { ok: true, role: 'admin', by: CONFIG.ADMIN_USER };
+  const t = findTeacher_(d && d.adminUser, d && d.adminPass);
+  if (!t) return { ok: false, error: 'ต้องล็อกอินครู/Admin ก่อน' };
+  if (t.subjects.indexOf(String(subject || '').trim()) < 0) {
+    return { ok: false, error: 'วิชา "' + subject + '" ไม่ใช่ของคุณ (คุณสั่งงานได้: ' + (t.subjects.join(', ') || '—') + ')' };
+  }
+  return { ok: true, role: 'teacher', by: t.name };
+}
+
+function newAssignId_() {
+  return 'A' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMddHHmmss') + Math.random().toString(36).slice(2, 4);
+}
+
+function addAssignment_(d) {
+  const subject = String(d.subject || '').trim();
+  const title = String(d.title || '').trim();
+  if (!subject || !title) return jsonOut_({ ok: false, error: 'กรุณาระบุวิชา + ชื่องานที่สั่ง' });
+  const perm = canManageAssign_(d, subject);
+  if (!perm.ok) return jsonOut_({ ok: false, error: perm.error });
+  const sh = getAssignSheet_(null);
+  const id = newAssignId_();
+  sh.appendRow([id, subject, title, String(d.description || ''), String(d.assignedAt || ''), String(d.dueAt || ''), perm.by, '1']);
+  return jsonOut_({ ok: true, id: id, subject: subject, title: title });
+}
+
+function editAssignment_(d) {
+  const row = Number(d.row);
+  if (!row || row < 2) return jsonOut_({ ok: false, error: 'row ไม่ถูกต้อง' });
+  const sh = getAssignSheet_(null);
+  if (!sh || row > sh.getLastRow()) return jsonOut_({ ok: false, error: 'ไม่พบใบสั่งงานนี้' });
+  const old = findAssign_(sh, String(sh.getRange(row, 1).getValue() || ''));
+  const subject = String(d.subject || '').trim();
+  const title = String(d.title || '').trim();
+  if (!subject || !title) return jsonOut_({ ok: false, error: 'กรุณาระบุวิชา + ชื่องานที่สั่ง' });
+  // เช็คสิทธิ์ทั้งวิชาเดิมและวิชาใหม่ (กันย้ายงานหนีไปวิชาคนอื่น)
+  const p1 = canManageAssign_(d, old ? old.subject : subject);
+  if (!p1.ok) return jsonOut_({ ok: false, error: p1.error });
+  const p2 = canManageAssign_(d, subject);
+  if (!p2.ok) return jsonOut_({ ok: false, error: p2.error });
+  const active = String(d.active) === '0' ? '0' : '1';
+  sh.getRange(row, 2, 1, 7).setValues([[subject, title, String(d.description || ''), String(d.assignedAt || ''), String(d.dueAt || ''), old ? old.createdBy : '', active]]);
+  return jsonOut_({ ok: true, row: row });
+}
+
+function deleteAssignment_(d) {
+  const row = Number(d.row);
+  if (!row || row < 2) return jsonOut_({ ok: false, error: 'row ไม่ถูกต้อง' });
+  const sh = getAssignSheet_(null);
+  if (!sh || row > sh.getLastRow()) return jsonOut_({ ok: true, alreadyDeleted: true, row: row });
+  const old = findAssign_(sh, String(sh.getRange(row, 1).getValue() || ''));
+  const perm = canManageAssign_(d, old ? old.subject : '');
+  if (!perm.ok) return jsonOut_({ ok: false, error: perm.error });
+  sh.deleteRow(row);
+  return jsonOut_({ ok: true, row: row });
+}
 function teacherSubjectClash_(sh, subjects, excludeRow) {
   if (!sh || sh.getLastRow() < 2 || !subjects || !subjects.length) return null;
   const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues();
