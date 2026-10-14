@@ -25,10 +25,10 @@ const CONFIG = {
   SHEET_TEACHERS: 'ครู',
   TEACHER_HEADERS: ['USER', 'PASS', 'ชื่อครู', 'วิชาที่สอน (comma คั่น)'],
   SHEET_ASSIGN: 'งานที่สั่ง',
-  ASSIGN_HEADERS: ['รหัสงาน', 'วิชา', 'ชื่อชิ้นงาน', 'คำอธิบาย', 'วันที่สั่ง', 'กำหนดส่ง', 'ผู้สั่ง', 'เปิดรับ', 'ภารกิจการเรียนรู้', 'ผลงานที่ต้องส่ง'],
+  ASSIGN_HEADERS: ['รหัสงาน', 'วิชา', 'ชื่อชิ้นงาน', 'คำอธิบาย', 'วันที่สั่ง', 'กำหนดส่ง', 'ผู้สั่ง', 'เปิดรับ', 'ภารกิจการเรียนรู้', 'ผลงานที่ต้องส่ง', 'คะแนนเต็ม'],
   ADMIN_USER: 'FirstStar',
   ADMIN_PASS: '574001',
-  VERSION: 'term-13', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
+  VERSION: 'term-14', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
   HEADERS: [
     'Timestamp','ชื่อ-สกุล','ชั้น/ห้อง','วิชา','ประเภทงาน','ชื่อชิ้นงาน',
     'คำอธิบาย','ชนิดไฟล์','ชื่อไฟล์','File URL','Drive File ID','สถานะตรวจ','ความเห็นครู',
@@ -1050,14 +1050,12 @@ function deleteTeacher_(d) {
 function getAssignSheet_(ss) {
   const s = ss || SpreadsheetApp.openById(CONFIG.SHEET_ID);
   const sh = getOrCreateSheet_(s, CONFIG.SHEET_ASSIGN, CONFIG.ASSIGN_HEADERS);
-  // อัปเกรดหัวเก่า 8 คอลัมน์ (เติม I,J) โดยไม่แตะข้อมูล
+  // อัปเกรดหัวเก่า (เติม I,J,K) โดยไม่แตะข้อมูล
   try {
-    if (sh.getLastColumn() < 10) {
-      for (let c = sh.getLastColumn() + 1; c <= 10; c++) sh.getRange(1, c).setValue(CONFIG.ASSIGN_HEADERS[c - 1]);
-    } else {
-      if (!String(sh.getRange(1, 9).getValue() || '').trim()) sh.getRange(1, 9).setValue(CONFIG.ASSIGN_HEADERS[8]);
-      if (!String(sh.getRange(1, 10).getValue() || '').trim()) sh.getRange(1, 10).setValue(CONFIG.ASSIGN_HEADERS[9]);
-    }
+    for (let c = sh.getLastColumn() + 1; c <= 11; c++) sh.getRange(1, c).setValue(CONFIG.ASSIGN_HEADERS[c - 1]);
+    if (!String(sh.getRange(1, 9).getValue() || '').trim()) sh.getRange(1, 9).setValue(CONFIG.ASSIGN_HEADERS[8]);
+    if (!String(sh.getRange(1, 10).getValue() || '').trim()) sh.getRange(1, 10).setValue(CONFIG.ASSIGN_HEADERS[9]);
+    if (!String(sh.getRange(1, 11).getValue() || '').trim()) sh.getRange(1, 11).setValue(CONFIG.ASSIGN_HEADERS[10]);
   } catch (e) {}
   return sh;
 }
@@ -1067,13 +1065,13 @@ function readAssignObj_(ss) {
   const sh = getAssignSheet_(ss);
   const out = [];
   if (sh && sh.getLastRow() >= 2) {
-    const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 10).getValues();
+    const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 11).getValues();
     vals.forEach(function(r, i) {
       const id = String(r[0] || '').trim();
       if (id) out.push({ row: i + 2, id: id, subject: String(r[1] || '').trim(), title: String(r[2] || '').trim(),
         description: String(r[3] || ''), assignedAt: String(r[4] || '').trim(), dueAt: String(r[5] || '').trim(),
         createdBy: String(r[6] || '').trim(), active: String(r[7] || '').trim() !== '0',
-        missions: String(r[8] || ''), deliverables: String(r[9] || '') });
+        missions: String(r[8] || ''), deliverables: String(r[9] || ''), fullScore: String(r[10] || '').trim() });
     });
   }
   return out;
@@ -1086,13 +1084,13 @@ function listAssignments_(d) {
 function findAssign_(sh, id) {
   id = String(id || '').trim();
   if (!id || !sh || sh.getLastRow() < 2) return null;
-  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 10).getValues();
+  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 11).getValues();
   for (let i = 0; i < vals.length; i++) {
     if (String(vals[i][0] || '').trim() === id) {
       return { row: i + 2, id: id, subject: String(vals[i][1] || '').trim(), title: String(vals[i][2] || '').trim(),
         description: String(vals[i][3] || ''), assignedAt: String(vals[i][4] || '').trim(), dueAt: String(vals[i][5] || '').trim(),
         createdBy: String(vals[i][6] || '').trim(), active: String(vals[i][7] || '').trim() !== '0',
-        missions: String(vals[i][8] || ''), deliverables: String(vals[i][9] || '') };
+        missions: String(vals[i][8] || ''), deliverables: String(vals[i][9] || ''), fullScore: String(vals[i][10] || '').trim() };
     }
   }
   return null;
@@ -1121,7 +1119,9 @@ function addAssignment_(d) {
   if (!perm.ok) return jsonOut_({ ok: false, error: perm.error });
   const sh = getAssignSheet_(null);
   const id = newAssignId_();
-  sh.appendRow([id, subject, title, String(d.description || ''), String(d.assignedAt || ''), String(d.dueAt || ''), perm.by, '1', String(d.missions || ''), String(d.deliverables || '')]);
+  const full = String(d.fullScore || '').trim();
+  if (full !== '' && !/^-?\d+(\.\d+)?$/.test(full)) return jsonOut_({ ok: false, error: 'คะแนนเต็มต้องเป็นตัวเลข' });
+  sh.appendRow([id, subject, title, String(d.description || ''), String(d.assignedAt || ''), String(d.dueAt || ''), perm.by, '1', String(d.missions || ''), String(d.deliverables || ''), full]);
   return jsonOut_({ ok: true, id: id, subject: subject, title: title });
 }
 
@@ -1140,7 +1140,9 @@ function editAssignment_(d) {
   const p2 = canManageAssign_(d, subject);
   if (!p2.ok) return jsonOut_({ ok: false, error: p2.error });
   const active = String(d.active) === '0' ? '0' : '1';
-  sh.getRange(row, 2, 1, 9).setValues([[subject, title, String(d.description || ''), String(d.assignedAt || ''), String(d.dueAt || ''), old ? old.createdBy : '', active, String(d.missions || ''), String(d.deliverables || '')]]);
+  const full = String(d.fullScore || '').trim();
+  if (full !== '' && !/^-?\d+(\.\d+)?$/.test(full)) return jsonOut_({ ok: false, error: 'คะแนนเต็มต้องเป็นตัวเลข' });
+  sh.getRange(row, 2, 1, 10).setValues([[subject, title, String(d.description || ''), String(d.assignedAt || ''), String(d.dueAt || ''), old ? old.createdBy : '', active, String(d.missions || ''), String(d.deliverables || ''), full]]);
   return jsonOut_({ ok: true, row: row });
 }
 
