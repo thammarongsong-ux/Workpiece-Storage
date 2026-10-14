@@ -22,9 +22,11 @@ const CONFIG = {
   SHEET_BASE: 'ผลงาน',            // prefix ของชีตรายเทอม เช่น ผลงาน_2568_1
   SHEET_SUBJECTS: 'วิชา',
   SHEET_STUDENTS: 'นักเรียน',
+  SHEET_TEACHERS: 'ครู',
+  TEACHER_HEADERS: ['USER', 'PASS', 'ชื่อครู', 'วิชาที่สอน (comma คั่น)'],
   ADMIN_USER: 'FirstStar',
   ADMIN_PASS: '574001',
-  VERSION: 'term-4', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
+  VERSION: 'term-5', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
   HEADERS: [
     'Timestamp','ชื่อ-สกุล','ชั้น/ห้อง','วิชา','ประเภทงาน','ชื่อชิ้นงาน',
     'คำอธิบาย','ชนิดไฟล์','ชื่อไฟล์','File URL','Drive File ID','สถานะตรวจ','ความเห็นครู',
@@ -89,6 +91,8 @@ function setupSheet() {
   }
   // ชีตนักเรียน
   getOrCreateSheet_(ss, CONFIG.SHEET_STUDENTS, ['ชื่อ-สกุล', 'ชั้น/ห้อง']);
+  // ชีตบัญชีครู (USER/PASS/ชื่อ/วิชาที่สอน) — สร้างเปล่าไว้ก่อน Admin มากรอกเอง
+  getOrCreateSheet_(ss, CONFIG.SHEET_TEACHERS, CONFIG.TEACHER_HEADERS);
   // อัปเกรดหัวตารางชีตรายเทอมที่มีอยู่แล้ว (ถ้ามี)
   listTermSheets_().forEach(function(t) {
     const sh = ss.getSheetByName(t.sheetName);
@@ -208,6 +212,53 @@ function isAdmin_(d) {
   return String(d && d.adminUser || '') === CONFIG.ADMIN_USER && String(d && d.adminPass || '') === CONFIG.ADMIN_PASS;
 }
 
+/** ---------- บัญชีครู (ตรวจได้เฉพาะวิชาที่สอน, จัดการระบบไม่ได้) ---------- */
+
+function getTeachersSheet_(ss) {
+  const s = ss || SpreadsheetApp.openById(CONFIG.SHEET_ID);
+  return getOrCreateSheet_(s, CONFIG.SHEET_TEACHERS, CONFIG.TEACHER_HEADERS);
+}
+
+/** ค้นครูจาก USER+PASS (trim ตรงตัว, เทียบ case-sensitive) คืน {row,user,name,subjects} หรือ null */
+function findTeacher_(user, pass) {
+  const u = String(user || '').trim();
+  const p = String(pass || '').trim();
+  if (!u || !p) return null;
+  const sh = getTeachersSheet_(null);
+  if (!sh || sh.getLastRow() < 2) return null;
+  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues();
+  for (let i = 0; i < vals.length; i++) {
+    if (String(vals[i][0] || '').trim() === u && String(vals[i][1] || '').trim() === p) {
+      return { row: i + 2, user: u, name: String(vals[i][2] || '').trim() || u, subjects: parseClasses_(vals[i][3]) };
+    }
+  }
+  return null;
+}
+
+/** ล็อกอิน: admin ก่อน, ไม่ใช่ค่อยหาชีตครู — ไม่เปิดเผยว่า user ผิดหรือ pass ผิด */
+function login_(d) {
+  if (isAdmin_(d)) {
+    return jsonOut_({ ok: true, role: 'admin', user: CONFIG.ADMIN_USER, name: CONFIG.ADMIN_USER, subjects: [] });
+  }
+  const t = findTeacher_(d && d.adminUser, d && d.adminPass);
+  if (t) {
+    return jsonOut_({ ok: true, role: 'teacher', user: t.user, name: t.name, subjects: t.subjects });
+  }
+  return jsonOut_({ ok: false, error: 'USER หรือ PASS ไม่ถูกต้อง' });
+}
+
+/** ตรวจได้ไหม: admin ได้ทุกวิชา, ครูได้เฉพาะวิชาในลิสต์ตัวเอง */
+function canGradeSubject_(d, subject) {
+  if (isAdmin_(d)) return { ok: true, role: 'admin' };
+  const t = findTeacher_(d && d.adminUser, d && d.adminPass);
+  if (!t) return { ok: false, error: 'ต้องล็อกอินก่อน' };
+  const subj = String(subject || '').trim();
+  if (t.subjects.indexOf(subj) < 0) {
+    return { ok: false, error: 'วิชา "' + subj + '" ไม่ใช่ของคุณ (คุณตรวจได้: ' + (t.subjects.join(', ') || '—') + ')' };
+  }
+  return { ok: true, role: 'teacher', teacher: t };
+}
+
 /** แปลง "ป.5/1, ป.5/2" -> ["ป.5/1","ป.5/2"] (รับ string หรือ array) */
 function parseClasses_(v) {
   if (!v) return [];
@@ -250,13 +301,13 @@ function getBootstrap_(yearFilter, semFilter) {
   });
 }
 
-// POST {action:'submit'|'updateStatus'|'login'|'addSubject'|'editSubject'|'deleteSubject'|'addStudent'|'editStudent'|'deleteStudent'|'deleteWork', ..., academicYear, semester}
+// POST {action:'submit'|'updateStatus'|'login'|'addSubject'|'editSubject'|'deleteSubject'|'addStudent'|'editStudent'|'deleteStudent'|'deleteWork'|'listTeachers'|'addTeacher'|'editTeacher'|'deleteTeacher', ..., academicYear, semester}
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
     if (data.action === 'submit') return submitWork_(data);
     if (data.action === 'login') {
-      return jsonOut_({ ok: isAdmin_(data), message: isAdmin_(data) ? 'login ok' : 'user/pass ไม่ถูกต้อง' });
+      return login_(data);
     }
     if (data.action === 'updateStatus') return updateStatus_(data);
     if (data.action === 'deleteWork') return deleteWork_(data);
@@ -267,6 +318,10 @@ function doPost(e) {
     if (data.action === 'addStudent') return addStudent_(data);
     if (data.action === 'editStudent') return editStudent_(data);
     if (data.action === 'deleteStudent') return deleteStudent_(data);
+    if (data.action === 'listTeachers') return listTeachers_(data);
+    if (data.action === 'addTeacher') return addTeacher_(data);
+    if (data.action === 'editTeacher') return editTeacher_(data);
+    if (data.action === 'deleteTeacher') return deleteTeacher_(data);
     return jsonOut_({ ok: false, error: 'unknown action' });
   } catch (err) {
     return jsonOut_({ ok: false, error: String(err && err.stack || err) });
@@ -439,6 +494,12 @@ function submitWork_(d) {
   if (!subject || !category || !title) {
     return jsonOut_({ ok: false, error: 'กรุณาเลือก วิชา / ประเภทงาน / ชื่อชิ้นงาน ให้ครบ' });
   }
+  // ถ้าล็อกอินเป็นครู (ส่ง adminUser/adminPass มาด้วย) จำกัดวิชาที่ส่งได้เฉพาะวิชาตัวเอง
+  // นักเรียนทั่วไปไม่ล็อกอิน ส่งได้ทุกวิชาเหมือนเดิม
+  if (!isAdmin_(d) && String(d.adminUser || '').trim()) {
+    const perm = canGradeSubject_(d, subject);
+    if (!perm.ok) return jsonOut_({ ok: false, error: perm.error || 'บัญชีครูไม่ถูกต้อง' });
+  }
   const groupId = members.length > 1
     ? ('G' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMddHHmmss'))
     : '';
@@ -502,9 +563,8 @@ function submitWork_(d) {
   return jsonOut_({ ok: true, fileUrl: fileUrl, driveFileId: driveFileId, academicYear: term.year, semester: term.semester, sheetName: term.sheetName, groupId: groupId, rows: members.length, isGroup: members.length > 1 });
 }
 
-/** ครูตรวจงาน (Admin เท่านั้น) — ต้องส่ง sheetName/termId/year+semester มาด้วย (ของเก่าส่งแค่ row = คลังเดิม) */
+/** ครูตรวจงาน (Admin ทุกวิชา / ครูเฉพาะวิชาที่สอน) — ต้องส่ง sheetName/termId/year+semester มาด้วย (ของเก่าส่งแค่ row = คลังเดิม) */
 function updateStatus_(d) {
-  if (!isAdmin_(d)) return jsonOut_({ ok: false, error: 'ต้องล็อกอิน Admin ก่อน' });
   const row = Number(d.row);
   const status = String(d.status || '');
   const comment = String(d.comment || '');
@@ -512,9 +572,13 @@ function updateStatus_(d) {
   if (['รอตรวจ', 'ผ่าน', 'ต้องแก้ไข'].indexOf(status) < 0) return jsonOut_({ ok: false, error: 'status ไม่ถูกต้อง' });
   const sh = resolveWorksSheet_(d);
   if (row > sh.getLastRow()) return jsonOut_({ ok: false, error: 'ไม่พบแถวนี้ในชีต ' + sh.getName() });
+  // เช็คสิทธิ์จากวิชาจริงในแถว (ไม่ใช้ค่าที่ client ส่งมา กันปลอม)
+  const subject = String(sh.getRange(row, 4).getValue() || '').trim();
+  const perm = canGradeSubject_(d, subject);
+  if (!perm.ok) return jsonOut_({ ok: false, error: perm.error || 'ต้องล็อกอินก่อน' });
   sh.getRange(row, 12).setValue(status);
   sh.getRange(row, 13).setValue(comment);
-  return jsonOut_({ ok: true, row: row, status: status, sheetName: sh.getName() });
+  return jsonOut_({ ok: true, row: row, status: status, sheetName: sh.getName(), role: perm.role });
 }
 
 /** ลบงาน (Admin เท่านั้น) */
@@ -707,6 +771,77 @@ function deleteStudent_(d) {
   if (!row || row < 2) return jsonOut_({ ok: false, error: 'row ไม่ถูกต้อง' });
   SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.SHEET_STUDENTS).deleteRow(row);
   return jsonOut_({ ok: true });
+}
+
+/** ---------- จัดการบัญชีครู (Admin เท่านั้น) ---------- */
+
+/** ลิสต์บัญชีครูให้ Admin (รวม PASS ไว้รีเซ็ต — ไม่เคยส่งให้สาธารณะ) */
+function listTeachers_(d) {
+  if (!isAdmin_(d)) return jsonOut_({ ok: false, error: 'เฉพาะ Admin เท่านั้น' });
+  const sh = getTeachersSheet_(null);
+  const out = [];
+  if (sh && sh.getLastRow() >= 2) {
+    const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues();
+    vals.forEach(function(r, i) {
+      const user = String(r[0] || '').trim();
+      if (user) out.push({ row: i + 2, user: user, pass: String(r[1] || ''), name: String(r[2] || '').trim() || user, subjects: parseClasses_(r[3]) });
+    });
+  }
+  return jsonOut_({ ok: true, teachers: out });
+}
+
+function addTeacher_(d) {
+  if (!isAdmin_(d)) return jsonOut_({ ok: false, error: 'เฉพาะ Admin เท่านั้น' });
+  const user = String(d.user || d.username || '').trim();
+  const pass = String(d.pass || d.password || '').trim();
+  const name = String(d.name || d.teacherName || '').trim() || user;
+  const subjects = parseClasses_(d.subjects);
+  if (!user || !pass || !name) return jsonOut_({ ok: false, error: 'กรุณากรอก USER / PASS / ชื่อครู ให้ครบ' });
+  if (user === CONFIG.ADMIN_USER) return jsonOut_({ ok: false, error: 'USER นี้ซ้ำกับ Admin' });
+  if (!subjects.length) return jsonOut_({ ok: false, error: 'กรุณาระบุวิชาที่สอนอย่างน้อย 1 วิชา' });
+  const sh = getTeachersSheet_(null);
+  if (sh.getLastRow() >= 2) {
+    const col = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+    for (let i = 0; i < col.length; i++) {
+      if (String(col[i][0] || '').trim() === user) return jsonOut_({ ok: false, error: 'มี USER นี้แล้ว' });
+    }
+  }
+  sh.appendRow([user, pass, name, subjects.join(', ')]);
+  return jsonOut_({ ok: true, user: user, name: name, subjects: subjects });
+}
+
+function editTeacher_(d) {
+  if (!isAdmin_(d)) return jsonOut_({ ok: false, error: 'เฉพาะ Admin เท่านั้น' });
+  const row = Number(d.row);
+  if (!row || row < 2) return jsonOut_({ ok: false, error: 'row ไม่ถูกต้อง' });
+  const sh = getTeachersSheet_(null);
+  if (!sh || row > sh.getLastRow()) return jsonOut_({ ok: false, error: 'ไม่พบบัญชีนี้' });
+  const user = String(d.user || d.username || '').trim();
+  const pass = String(d.pass || d.password || '').trim();
+  const name = String(d.name || d.teacherName || '').trim();
+  const subjects = parseClasses_(d.subjects);
+  if (!user || !pass || !name) return jsonOut_({ ok: false, error: 'กรุณากรอก USER / PASS / ชื่อครู ให้ครบ' });
+  if (user === CONFIG.ADMIN_USER) return jsonOut_({ ok: false, error: 'USER นี้ซ้ำกับ Admin' });
+  if (!subjects.length) return jsonOut_({ ok: false, error: 'กรุณาระบุวิชาที่สอนอย่างน้อย 1 วิชา' });
+  const n = sh.getLastRow() - 1;
+  const col = sh.getRange(2, 1, n, 1).getValues();
+  for (let i = 0; i < n; i++) {
+    if ((i + 2) !== row && String(col[i][0] || '').trim() === user) {
+      return jsonOut_({ ok: false, error: 'มี USER นี้แล้ว (แถว ' + (i + 2) + ')' });
+    }
+  }
+  sh.getRange(row, 1, 1, 4).setValues([[user, pass, name, subjects.join(', ')]]);
+  return jsonOut_({ ok: true, row: row, user: user, name: name, subjects: subjects });
+}
+
+function deleteTeacher_(d) {
+  if (!isAdmin_(d)) return jsonOut_({ ok: false, error: 'เฉพาะ Admin เท่านั้น' });
+  const row = Number(d.row);
+  if (!row || row < 2) return jsonOut_({ ok: false, error: 'row ไม่ถูกต้อง' });
+  const sh = getTeachersSheet_(null);
+  if (!sh || row > sh.getLastRow()) return jsonOut_({ ok: true, alreadyDeleted: true, row: row });
+  sh.deleteRow(row);
+  return jsonOut_({ ok: true, row: row });
 }
 
 function getOrCreateFolder_(parent, name) {
