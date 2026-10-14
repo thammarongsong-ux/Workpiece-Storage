@@ -17,7 +17,7 @@ let SUBJECTS = ['ภาษาไทย','คณิตศาสตร์','วิ
 let STUDENTS = [];
 let TERMS = []; // [{year, semester, termId, sheetName}] จาก backend
 let CURRENT_TERM = null; // {year, semester}
-const BACKEND_VERSION = 'term-4'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
+const BACKEND_VERSION = 'term-5'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
 const CATEGORIES = [
   { name:'ใบงาน', icon:'📝', color:'from-amber-400 to-orange-500' },
   { name:'โครงงาน', icon:'🔬', color:'from-emerald-400 to-teal-600' },
@@ -255,7 +255,7 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
       <a id="linkDrive" href="#" target="_blank" class="text-xs px-3 py-2 rounded-xl bg-amber-500 text-white">📁 เปิด Drive (Admin)</a>
       <button onclick="doLogout()" class="text-xs px-3 py-2 rounded-xl bg-slate-200">ออกจากระบบ</button>
     </div>
-    <div class="bg-white rounded-2xl border p-4">
+    <div id="sysTermBox" class="bg-white rounded-2xl border p-4">
       <h3 class="font-semibold mb-1">📅 แท็บชีตแยกตามเทอม <span id="termCount" class="text-xs text-slate-400"></span></h3>
       <p class="text-xs text-slate-400 mb-2">ชีต ผลงาน_ปี_เทอม ถูกสร้างอัตโนมัติเมื่อมีการส่งงานเทอมนั้นครั้งแรก • งานเก่าก่อนแยกเทอมอยู่ในแท็บ “ผลงาน”</p>
       <div id="termList" class="flex gap-2 flex-wrap"></div>
@@ -267,7 +267,7 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
         <span class="text-xs text-slate-400">แตะเฉพาะแถวที่ปีว่าง • แถวที่มีปีแล้วไม่โดนเปลี่ยน</span>
       </div>
     </div>
-    <div class="grid md:grid-cols-2 gap-4">
+    <div id="sysGridBox" class="grid md:grid-cols-2 gap-4">
       <div class="bg-white rounded-2xl border p-4">
         <h3 class="font-semibold mb-1">📚 วิชา <span id="subjCount" class="text-xs text-slate-400"></span></h3>
         <p class="text-xs text-slate-400 mb-2">เพิ่ม/แก้ไข/ลบ บันทึกลงชีต “วิชา” แล้วดึงมาใช้ทุกหน้า • กำกับห้องได้ (ว่าง = ทุกห้อง)</p>
@@ -289,6 +289,23 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
         <div id="studentAdminList" class="space-y-1 max-h-64 overflow-auto"></div>
       </div>
     </div>
+    <div id="teacherManageBox" class="bg-white rounded-2xl border p-4">
+      <h3 class="font-semibold mb-1">👩‍🏫 บัญชีครู <span id="teacherCount" class="text-xs text-slate-400"></span></h3>
+      <p class="text-xs text-slate-400 mb-2">เฉพาะ Admin เพิ่ม/ลบได้ • ครูล็อกอินช่องเดิม ตรวจงานได้เฉพาะวิชาที่กำหนด (ลบ/จัดการระบบไม่ได้) • รหัสเก็บเป็นข้อความธรรมดาในชีต “ครู” อย่าใช้รหัสเดียวกับอีเมล</p>
+      <div class="grid md:grid-cols-4 gap-2 mb-3">
+        <input id="newTeacherUser" placeholder="USER (เช่น kru.math)" class="border rounded-xl px-3 py-2 text-sm">
+        <input id="newTeacherPass" placeholder="PASS" class="border rounded-xl px-3 py-2 text-sm">
+        <input id="newTeacherName" placeholder="ชื่อครู (เช่น ครูสมใจ)" class="border rounded-xl px-3 py-2 text-sm">
+        <input id="newTeacherSubjects" list="subjectList2" placeholder="วิชาที่สอน comma คั่น" class="border rounded-xl px-3 py-2 text-sm">
+        <datalist id="subjectList2"></datalist>
+        <button onclick="addTeacher()" class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm md:col-span-4">+ เพิ่มบัญชีครู</button>
+      </div>
+      <div id="teacherAdminList" class="space-y-1 max-h-64 overflow-auto"></div>
+    </div>
+    <div id="teacherInfoBox" class="hidden bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm">
+      👩‍🏫 ล็อกอินครู <b id="teacherInfoName"></b> — ตรวจ/ส่งได้เฉพาะวิชา: <b id="teacherInfoSubjects"></b>
+      <span class="text-slate-500">(เมนูจัดการวิชา/นักเรียน/บัญชีครู/ปุ่มลบ เป็นของ Admin เท่านั้น)</span>
+    </div>
     <p class="text-xs text-slate-400">🔒 Sheet และ Drive ตั้ง Share เป็น Restricted (เฉพาะครู) • นักเรียนทั่วไปเห็นแค่ผลงาน ไม่เห็นลิงก์ต้นทาง</p>
   </div>
 </section>
@@ -301,7 +318,19 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
 let ALL = [];
 let fileKind = 'image';
 let ADMIN = JSON.parse(sessionStorage.getItem('Workpiece Storage_admin')||'null');
+if(ADMIN && !ADMIN.role) ADMIN.role = 'admin'; // session เก่าก่อนมีระบบครู ให้นับเป็น admin
+let TEACHERS = []; // บัญชีครู (Admin เท่านั้นที่โหลดได้ รวม PASS ไว้รีเซ็ต)
 let SUBJECT_ROWS = [];
+// ---------- บทบาท: admin เห็น/ทำได้ทุกอย่าง, teacher ตรวจได้เฉพาะวิชาตัวเอง ----------
+function isAdmin(){ return !!ADMIN && (ADMIN.role || 'admin') === 'admin'; }
+function isTeacher(){ return !!ADMIN && ADMIN.role === 'teacher'; }
+function teacherSubjects(){ return (ADMIN && ADMIN.subjects) ? ADMIN.subjects : []; }
+function canGradeSubject(subj){
+  if(isAdmin()) return true;
+  if(!isTeacher()) return false;
+  return teacherSubjects().includes(String(subj || ''));
+}
+function roleLabel(){ return isTeacher() ? ('ครู ' + (ADMIN.name || ADMIN.user)) : (ADMIN ? ('Admin ' + (ADMIN.name || ADMIN.user)) : ''); }
 function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function safeUrl(u){ u = String(u || '').trim(); if(!/^https:\/\/(drive\.google\.com\/|docs\.google\.com\/)|^https?:\/\//i.test(u)) return '#'; return u.replace(/"/g,'&quot;'); }
 
@@ -419,6 +448,7 @@ function subjectsForClass(cls){
   return uniq(rows.filter(o=>!o.classrooms || !o.classrooms.length || !cls || o.classrooms.includes(cls)).map(o=>o.name));
 }
 function refillSubjects(){
+  const allow = isTeacher() ? teacherSubjects() : null; // ครูเห็นเฉพาะวิชาตัวเองทุก dropdown
   const pairs = [
     ['fClass','fSubject','— เลือกวิชา (จาก Sheet) —'],
     ['dashClass','dashSubject','ทุกวิชา'],
@@ -428,7 +458,9 @@ function refillSubjects(){
   ];
   pairs.forEach(([c,s,first])=>{
     const cls = document.getElementById(c)?.value || '';
-    setSel(s, subjectsForClass(cls), first);
+    let list = subjectsForClass(cls);
+    if(allow) list = list.filter(x => allow.includes(x));
+    setSel(s, list, first);
   });
 }
 function classroomOf(name){
@@ -488,15 +520,31 @@ function termKeys(r){
 function goAdmin(){ document.querySelector('[data-tab="admin"]').click(); }
 function refreshAdminUI(){
   const on = !!ADMIN;
+  const admin = isAdmin();
   document.getElementById('loginBox').classList.toggle('hidden', on);
   document.getElementById('adminPanel').classList.toggle('hidden', !on);
-  document.getElementById('adminBtn').textContent = on ? '✅ '+ADMIN.user : '🔐 Admin';
-  document.getElementById('chkLock').style.display = on ? 'none' : '';
+  document.getElementById('adminBtn').textContent = on ? ('✅ ' + (ADMIN.name || ADMIN.user) + (isTeacher() ? ' (ครู)' : '')) : '🔐 Admin';
+  const lock = document.getElementById('chkLock');
+  if(lock){
+    if(!on) { lock.style.display = ''; lock.innerHTML = '🔒 หน้าตรวจงานสำหรับครู/Admin — <button onclick="goAdmin()" class="underline font-semibold">เข้าสู่ระบบ</button> เพื่อกดผ่าน/แก้ไข/ลบงานได้'; }
+    else if(isTeacher()) { lock.style.display = ''; lock.className = 'bg-blue-900 text-white rounded-2xl p-4 mb-4 text-sm'; lock.innerHTML = '👩‍🏫 ล็อกอินครู <b>' + esc(ADMIN.name || ADMIN.user) + '</b> — ตรวจได้เฉพาะวิชา: <b>' + esc(teacherSubjects().join(', ') || '—') + '</b> (ปุ่มลบ/จัดการระบบเป็นของ Admin เท่านั้น)'; }
+    else { lock.style.display = 'none'; }
+  }
+  // สิทธิ์ระบบ (วิชา/นักเรียน/บัญชีครู/ย้อนหลังใส่ปี) เป็นของ Admin เท่านั้น — ครูเห็นแค่กล่องข้อมูลตัวเอง
+  ['sysTermBox','sysGridBox','teacherManageBox'].forEach(id=>{ const el=document.getElementById(id); if(el) el.classList.toggle('hidden', on && !admin); });
+  const tib = document.getElementById('teacherInfoBox'); if(tib) tib.classList.toggle('hidden', !isTeacher());
+  if(isTeacher()){
+    const tn = document.getElementById('teacherInfoName'); if(tn) tn.textContent = ADMIN.name || ADMIN.user;
+    const ts = document.getElementById('teacherInfoSubjects'); if(ts) ts.textContent = teacherSubjects().join(', ') || '—';
+  }
   if(on){
-    document.getElementById('adminName').textContent = ADMIN.user;
+    document.getElementById('adminName').textContent = roleLabel();
     document.getElementById('linkSheet').href = SHEET_URL;
     document.getElementById('linkDrive').href = DRIVE_URL;
-    if(ACTIVE_TAB==='admin') renderAdminLists();
+    const hideLinks = !admin; // ลิงก์ Sheet/Drive ต้นทางเป็นของ Admin เท่านั้น
+    document.getElementById('linkSheet').style.display = hideLinks ? 'none' : '';
+    document.getElementById('linkDrive').style.display = hideLinks ? 'none' : '';
+    if(ACTIVE_TAB==='admin' && admin) { renderAdminLists(); loadTeachers(); }
   }
   if(ACTIVE_TAB==='check') renderCheck();
 }
@@ -612,12 +660,13 @@ async function doLogin(){
   try{
     const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'login',adminUser:u,adminPass:p})});
     const j=await res.json();
-    if(!j.ok) throw new Error('USER หรือ PASS ไม่ถูกต้อง');
-    ADMIN={user:u,pass:p}; sessionStorage.setItem('Workpiece Storage_admin',JSON.stringify(ADMIN));
-    msg.innerHTML='<span class="text-emerald-600">✅ เข้าสู่ระบบสำเร็จ</span>'; refreshAdminUI();
-  }catch(e){ msg.innerHTML='<span class="text-red-600">❌ '+e.message+'</span>'; }
+    if(!j.ok) throw new Error(j.error || 'USER หรือ PASS ไม่ถูกต้อง');
+    ADMIN={user:u,pass:p,role:j.role||'admin',name:j.name||u,subjects:j.subjects||[]}; sessionStorage.setItem('Workpiece Storage_admin',JSON.stringify(ADMIN));
+    msg.innerHTML='<span class="text-emerald-600">✅ เข้าสู่ระบบสำเร็จ ('+(ADMIN.role==='teacher' ? 'ครู '+esc(ADMIN.name) : 'Admin')+')</span>';
+    refillSubjects(); refreshAdminUI();
+  }catch(e){ msg.innerHTML='<span class="text-red-600">❌ '+esc(e.message)+'</span>'; }
 }
-function doLogout(){ ADMIN=null; sessionStorage.removeItem('Workpiece Storage_admin'); document.getElementById('adUser').value='';document.getElementById('adPass').value='';refreshAdminUI(); }
+function doLogout(){ ADMIN=null; TEACHERS=[]; sessionStorage.removeItem('Workpiece Storage_admin'); document.getElementById('adUser').value='';document.getElementById('adPass').value=''; refillSubjects(); refreshAdminUI(); }
 async function adminPost(payload){
   const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({...payload,...adminAuth()})});
   const j=await res.json(); if(!j.ok) throw new Error(j.error||'บันทึกไม่สำเร็จ'); return j;
@@ -651,10 +700,57 @@ async function addStudent(){
   try{ await adminPost({action:'addStudent',fullName:n,classroom:c}); document.getElementById('newStudent').value='';document.getElementById('newClass').value=''; softRefresh(); }
   catch(e){ alert(e.message); }
 }
-async function delSubject(row){ if(!confirm('ลบวิชานี้? (งานเดิมที่ใช้วิชานี้จะไม่ถูกลบ)')) return; try{ await adminPost({action:'deleteSubject',row}); softRefresh(); }catch(e){ alert(e.message); } }
-async function delStudent(row){ if(!confirm('ลบชื่อนักเรียนนี้? (งานเดิมที่ส่งแล้วจะไม่ถูกลบ)')) return; try{ await adminPost({action:'deleteStudent',row}); softRefresh(); }catch(e){ alert(e.message); } }
+async function delSubject(row){ if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น'); if(!confirm('ลบวิชานี้? (งานเดิมที่ใช้วิชานี้จะไม่ถูกลบ)')) return; try{ await adminPost({action:'deleteSubject',row}); softRefresh(); }catch(e){ alert(e.message); } }
+async function delStudent(row){ if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น'); if(!confirm('ลบชื่อนักเรียนนี้? (งานเดิมที่ส่งแล้วจะไม่ถูกลบ)')) return; try{ await adminPost({action:'deleteStudent',row}); softRefresh(); }catch(e){ alert(e.message); } }
+// ---------- บัญชีครู (Admin เท่านั้น) ----------
+async function loadTeachers(){
+  if(!isAdmin()) return;
+  try{
+    const j = await adminPost({action:'listTeachers'});
+    TEACHERS = j.teachers || [];
+  }catch(e){ TEACHERS = []; }
+  renderTeachers();
+}
+function renderTeachers(){
+  const box = document.getElementById('teacherAdminList'); if(!box) return;
+  const cnt = document.getElementById('teacherCount'); if(cnt) cnt.textContent = `(${TEACHERS.length} บัญชี)`;
+  const dl = document.getElementById('subjectList2');
+  if(dl) dl.innerHTML = SUBJECTS.map(s=>`<option value="${esc(s)}">`).join('');
+  box.innerHTML = TEACHERS.map(t=>`<div class="border rounded-xl px-3 py-1.5 text-sm"><div class="flex justify-between items-center gap-2"><span>👩‍🏫 ${esc(t.name)} <span class="text-slate-400">@${esc(t.user)}</span></span><span class="flex gap-2"><button onclick="editTeacherUI(${t.row})" class="text-blue-600 text-xs">✏️ แก้ไข</button><button onclick="delTeacher(${t.row})" class="text-red-500 text-xs">ลบ</button></span></div><div class="flex gap-1 flex-wrap mt-1">${(t.subjects||[]).map(s=>`<span class="badge bg-emerald-100 text-emerald-700">${esc(s)}</span>`).join('') || '<span class="badge bg-red-100 text-red-700">ยังไม่กำหนดวิชา</span>'}</div><div id="teacher-edit-${t.row}" class="mt-1"></div></div>`).join('') || '<p class="text-xs text-slate-400">ยังไม่มีบัญชีครู — เพิ่มด้านบนได้เลย (รัน setupSheet() ใน Apps Script ก่อน 1 ครั้งถ้าเพิ่งอัปเกรด)</p>';
+}
+async function addTeacher(){
+  if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น');
+  const user=document.getElementById('newTeacherUser').value.trim(), pass=document.getElementById('newTeacherPass').value.trim();
+  const name=document.getElementById('newTeacherName').value.trim(), subjects=document.getElementById('newTeacherSubjects').value.trim();
+  if(!user || !pass || !name) return alert('กรุณากรอก USER / PASS / ชื่อครู ให้ครบ');
+  if(!subjects) return alert('กรุณาระบุวิชาที่สอนอย่างน้อย 1 วิชา (comma คั่น)');
+  try{
+    await adminPost({action:'addTeacher', user, pass, name, subjects});
+    document.getElementById('newTeacherUser').value='';document.getElementById('newTeacherPass').value='';document.getElementById('newTeacherName').value='';document.getElementById('newTeacherSubjects').value='';
+    await loadTeachers(); alert('✅ เพิ่มบัญชีครู "'+name+'" แล้ว');
+  }catch(e){ alert('❌ '+e.message); }
+}
+function editTeacherUI(row){
+  if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น');
+  const t = TEACHERS.find(x=>x.row===row); if(!t) return;
+  const box = document.getElementById('teacher-edit-'+row); if(!box) return;
+  box.innerHTML = `<div class="flex flex-col gap-1 w-full"><input id="t-user-${row}" value="${esc(t.user)}" placeholder="USER" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><input id="t-pass-${row}" value="${esc(t.pass||'')}" placeholder="PASS (รหัสใหม่)" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><input id="t-name-${row}" value="${esc(t.name)}" placeholder="ชื่อครู" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><input id="t-subj-${row}" value="${esc((t.subjects||[]).join(', '))}" list="subjectList2" placeholder="วิชาที่สอน comma คั่น" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><div class="flex gap-1"><button onclick="saveTeacherEdit(${row})" class="px-2 py-1 rounded-lg bg-blue-600 text-white text-xs">บันทึก</button><button onclick="renderTeachers()" class="px-2 py-1 rounded-lg bg-slate-200 text-xs">ยกเลิก</button></div></div>`;
+}
+async function saveTeacherEdit(row){
+  if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น');
+  const user=(document.getElementById('t-user-'+row)?.value||'').trim(), pass=(document.getElementById('t-pass-'+row)?.value||'').trim();
+  const name=(document.getElementById('t-name-'+row)?.value||'').trim(), subjects=(document.getElementById('t-subj-'+row)?.value||'').trim();
+  if(!user || !pass || !name) return alert('กรุณากรอก USER / PASS / ชื่อครู ให้ครบ');
+  try{ await adminPost({action:'editTeacher', row, user, pass, name, subjects}); await loadTeachers(); alert('✅ บันทึกบัญชีครูแล้ว'); }
+  catch(e){ alert('❌ '+e.message); }
+}
+async function delTeacher(row){
+  if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น');
+  if(!confirm('ลบบัญชีครูนี้? (งานเดิมไม่ถูกลบ)')) return;
+  try{ await adminPost({action:'deleteTeacher', row}); await loadTeachers(); }catch(e){ alert('❌ '+e.message); }
+}
 async function backfillTerm(){
-  if(!ADMIN) return alert('🔒 ต้องล็อกอิน Admin ก่อน');
+  if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น');
   const y = document.getElementById('bfYear')?.value || '';
   const t = document.getElementById('bfTerm')?.value || '';
   if(!/^\d{4}$/.test(y) || (t!=='1' && t!=='2')) return alert('เลือกปี/เทอมให้ถูกต้องก่อน');
@@ -685,6 +781,7 @@ async function saveStudentEdit(row){
   }catch(e){ alert(e.message); }
 }
 function renderAdminLists(){
+  if(!isAdmin()) return; // ครูไม่มีสิทธิ์เห็น/จัดการรายการระบบ
   document.getElementById('subjCount').textContent = `(${SUBJECTS.length} วิชา)`;
   document.getElementById('subjectList').innerHTML = SUBJECT_ROWS.map((o,i)=>{
     const rooms = o.classrooms || [];
@@ -723,7 +820,7 @@ function renderActive(){
   else if(ACTIVE_TAB==='padlet') renderPadlet();
   else if(ACTIVE_TAB==='summary') renderSummary();
   else if(ACTIVE_TAB==='check') renderCheck();
-  else if(ACTIVE_TAB==='admin' && ADMIN) renderAdminLists();
+  else if(ACTIVE_TAB==='admin' && isAdmin()) { renderAdminLists(); loadTeachers(); }
   document.getElementById('ftotal').textContent='ทั้งหมด '+ALL.length+' ชิ้น ('+TERMS.length+' เทอม + คลังเดิม)';
 }
 function renderAll(){ fillTermSelects(); fillSubjects(); renderActive(); }
@@ -840,7 +937,9 @@ document.getElementById('submitForm').onsubmit = async (e)=>{
   const subjAllow = uniq(subjDupes.flatMap(o=>o.classrooms||[]));
   const badM = (!subjDupes.length || !subjAllow.length) ? [] : members.filter(m=>!subjAllow.includes(m.classroom));
   if(badM.length){msg.innerHTML=`<p class="text-red-600 text-sm">⚠️ วิชา "${esc(payload.subject)}" ไม่ได้กำหนดให้ห้อง ${esc(badM.map(m=>m.classroom).join(', '))} (กำหนดไว้: ${esc(subjAllow.join(', '))}) กรุณาเลือกวิชาใหม่</p>`;return;}
+  if(isTeacher() && !canGradeSubject(payload.subject)){msg.innerHTML=`<p class="text-red-600 text-sm">🔒 บัญชีครูของคุณส่งได้เฉพาะวิชา: ${esc(teacherSubjects().join(', ')||'—')}</p>`;return;}
   payload.members = members;
+  Object.assign(payload, adminAuth()); // แนบสิทธิ์ไปด้วย: backend จะบังคับวิชาครูอีกชั้น (นักเรียนไม่ล็อกอินส่งได้ทุกวิชาเหมือนเดิม)
   btn.disabled=true; btn.textContent='⏳ กำลังส่ง...'; msg.innerHTML='';
   try{
     if(fileKind==='link'){
@@ -919,25 +1018,27 @@ function chkShowMore(){ CHK_LIMIT += CHK_STEP; renderCheck(); }
 function renderCheck(){
   const y=val('chkYear'), t=val('chkTerm');
   const c=document.getElementById('chkCategory').value, s=val('chkSubject'), cl=val('chkClass'), nm=val('chkName'), st=document.getElementById('chkStatus').value, q=document.getElementById('chkSearch').value.trim().toLowerCase();
-  const rows=ALL.filter(r=>matchTerm(r,y,t)&&matchSheet(r,s,cl,nm)&&(!c||r.category===c)&&(!st||r.status===st)&&(!q||r.title.toLowerCase().includes(q)));
-  document.getElementById('chkCount').textContent=`พบ ${rows.length} ชิ้น • รอตรวจ ${rows.filter(r=>r.status==='รอตรวจ').length} ชิ้น` + (y||t ? ` • ปี ${y||'ทุกปี'} เทอม ${t||'ทุกเทอม'}` : '');
+  const onlyMine = isTeacher() ? teacherSubjects() : null; // ครูเห็นเฉพาะวิชาตัวเอง
+  const rows=ALL.filter(r=>matchTerm(r,y,t)&&matchSheet(r,s,cl,nm)&&(!c||r.category===c)&&(!st||r.status===st)&&(!q||r.title.toLowerCase().includes(q))&&(!onlyMine||onlyMine.includes(String(r.subject||''))));
+  document.getElementById('chkCount').textContent=`พบ ${rows.length} ชิ้น • รอตรวจ ${rows.filter(r=>r.status==='รอตรวจ').length} ชิ้น` + (y||t ? ` • ปี ${y||'ทุกปี'} เทอม ${t||'ทุกเทอม'}` : '') + (onlyMine ? ` • เฉพาะวิชาคุณ (${onlyMine.join(', ')})` : '');
   const show = rows.slice(0, CHK_LIMIT);
   document.getElementById('chkList').innerHTML=show.map(r=>{
     const th=thumb(r);
+    const can = canGradeSubject(r.subject); // admin=true เสมอ, ครู=true เฉพาะวิชาตัวเอง
     return `<div class="bg-white rounded-2xl border p-4 flex flex-col md:flex-row gap-4" id="chk-${esc(r.sheetName||'ผลงาน')}-${r.row}">
       <div class="md:w-40 shrink-0">${th?`<img src="${th}" loading="lazy" decoding="async" class="w-full h-28 object-cover rounded-xl" alt="">`:`<div class="w-full h-28 rounded-xl bg-slate-100 grid place-items-center text-4xl">${fileIcon(r.fileKind)}</div>`}</div>
       <div class="flex-1">
-        <p class="font-semibold">${esc(r.title)} ${statusBadge(r.status)} ${termBadge(r)} ${groupBadge(r)}</p>
+        <p class="font-semibold">${esc(r.title)} ${statusBadge(r.status)} ${termBadge(r)} ${groupBadge(r)}${can?'':' <span class="badge bg-slate-100 text-slate-500">🔒 วิชาอื่น</span>'}</p>
         <p class="text-sm text-slate-500">👦 ${esc(r.fullName)}${r.classroom?' ('+esc(r.classroom)+')':''} • 📚 ${esc(r.subject)} • 📂 ${esc(r.category)} • ${esc(r.timestamp)} • ชีต ${esc(r.sheetName||'ผลงาน')}</p>
         ${groupLine(r)}
         ${r.description?`<p class="text-sm mt-1">${esc(r.description)}</p>`:''}
         <a href="${safeUrl(r.fileUrl)}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline">เปิดไฟล์ต้นฉบับ →</a>
         <div class="flex flex-wrap gap-2 mt-3">
-          <input id="cmt-${esc(r.sheetName||'')}-${r.row}" value="${esc(r.comment||'')}" placeholder="💬 ความเห็นครู..." ${ADMIN?'':'disabled'} class="border rounded-xl px-3 py-1.5 text-sm flex-1 min-w-[180px] disabled:bg-slate-100">
-          <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ผ่าน',this)" class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-sm disabled:opacity-50">✅ ผ่าน</button>
-          <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ต้องแก้ไข',this)" class="px-3 py-1.5 rounded-xl bg-red-500 text-white text-sm disabled:opacity-50">✏️ แก้ไข</button>
-          <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'รอตรวจ',this)" class="px-3 py-1.5 rounded-xl bg-slate-200 text-sm disabled:opacity-50">⏳ รอตรวจ</button>
-          ${ADMIN?`<button onclick="delWork('${esc(r.sheetName||'ผลงาน')}',${r.row})" class="px-3 py-1.5 rounded-xl bg-slate-900 text-white text-sm">🗑️ ลบ</button>`:''}
+          <input id="cmt-${esc(r.sheetName||'')}-${r.row}" value="${esc(r.comment||'')}" placeholder="💬 ความเห็นครู..." ${can?'':'disabled'} class="border rounded-xl px-3 py-1.5 text-sm flex-1 min-w-[180px] disabled:bg-slate-100">
+          <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ผ่าน',this)" ${can?'':'disabled'} class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-sm disabled:opacity-50">✅ ผ่าน</button>
+          <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ต้องแก้ไข',this)" ${can?'':'disabled'} class="px-3 py-1.5 rounded-xl bg-red-500 text-white text-sm disabled:opacity-50">✏️ แก้ไข</button>
+          <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'รอตรวจ',this)" ${can?'':'disabled'} class="px-3 py-1.5 rounded-xl bg-slate-200 text-sm disabled:opacity-50">⏳ รอตรวจ</button>
+          ${isAdmin()?`<button onclick="delWork('${esc(r.sheetName||'ผลงาน')}',${r.row})" class="px-3 py-1.5 rounded-xl bg-slate-900 text-white text-sm">🗑️ ลบ</button>`:''}
         </div>
       </div></div>`;
   }).join('')||'<p class="text-slate-400 text-sm">ไม่พบงานตามเงื่อนไข</p>';
@@ -945,7 +1046,9 @@ function renderCheck(){
   if(more){ more.classList.toggle('hidden', rows.length <= CHK_LIMIT); more.textContent = `โหลดเพิ่ม ↓ (แสดง ${show.length}/${rows.length})`; }
 }
 async function setStatus(sheetName,row,status,btn){
-  if(!ADMIN) return alert('🔒 ต้องล็อกอิน Admin ก่อน (USER: FirstStar)');
+  if(!ADMIN) return alert('🔒 ต้องล็อกอินครู/Admin ก่อน');
+  const ref0 = ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row));
+  if(ref0 && !canGradeSubject(ref0.subject)) return alert('🔒 วิชา "'+ref0.subject+'" ไม่ใช่ของคุณ (คุณตรวจได้: '+teacherSubjects().join(', ')+')');
   if(btn){ if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true; }
   const cmt=(document.getElementById('cmt-'+sheetName+'-'+row)?.value||'');
   const ref = ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row));
@@ -959,7 +1062,7 @@ async function setStatus(sheetName,row,status,btn){
   if(btn){ btn.dataset.busy='0'; btn.disabled=false; }
 }
 async function delWork(sheetName,row){
-  if(!ADMIN) return alert('🔒 ต้องล็อกอิน Admin ก่อน');
+  if(!isAdmin()) return alert('🔒 เฉพาะ Admin ลบได้ (ครูลบไม่ได้)');
   if(!confirm('ลบงานชิ้นนี้ (พร้อมไฟล์ใน Drive)? ['+sheetName+' แถว '+row+']')) return;
   const ref = ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row));
   try{
