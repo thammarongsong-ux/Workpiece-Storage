@@ -17,7 +17,7 @@ let SUBJECTS = ['ภาษาไทย','คณิตศาสตร์','วิ
 let STUDENTS = [];
 let TERMS = []; // [{year, semester, termId, sheetName}] จาก backend
 let CURRENT_TERM = null; // {year, semester}
-const BACKEND_VERSION = 'term-10'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
+const BACKEND_VERSION = 'term-12'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
 const CATEGORIES = [
   { name:'ใบงาน', icon:'📝', color:'from-amber-400 to-orange-500' },
   { name:'โครงงาน', icon:'🔬', color:'from-emerald-400 to-teal-600' },
@@ -78,6 +78,7 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
 
 <main class="max-w-7xl mx-auto px-4 py-6">
 <div id="verBanner" class="hidden mb-4"><div class="bg-red-50 border border-red-300 text-red-700 rounded-2xl p-3 text-sm">⚠️ <b>Backend ยังเป็นเวอร์ชันเก่า</b> — งานที่ส่งจะไม่บันทึกปี/เทอม และกรองตามปีไม่ได้<br>แก้: วาง <b>Code.gs</b> ตัวใหม่ทับใน Apps Script > Save > รัน <b>setupSheet()</b> 1 ครั้ง > Deploy > Manage deployments > Edit > <b>Version: New version</b> > Deploy แล้วกดรีเฟรชหน้านี้</div></div>
+<div id="warnBanner" class="hidden mb-4"><div class="bg-amber-50 border border-amber-300 text-amber-800 rounded-2xl p-3 text-sm">⚠️ <b>ข้อมูลมาไม่ครบ:</b> <span id="warnText"></span></div></div>
 <div id="switchBar" class="hidden mb-4"><div class="bg-purple-600 text-white rounded-2xl p-3 text-sm flex flex-wrap gap-2 items-center"><span class="flex-1">🔀 คุณกำลังใช้บทบาท <b id="switchBarName"></b> (สลับโดย Admin) — ตรวจ/ให้คะแนนได้เฉพาะวิชาของครูคนนี้</span><button onclick="switchBackToAdmin()" class="px-3 py-1.5 rounded-xl bg-white text-purple-700 text-sm font-semibold">↩ กลับเป็น Admin</button></div></div>
 
 <!-- ============ DASHBOARD ============ -->
@@ -774,6 +775,13 @@ function applyBootData(j){
   const verOk = j && j.version === BACKEND_VERSION;
   const vb = document.getElementById('verBanner');
   if(vb) vb.classList.toggle('hidden', !!verOk);
+  // ข้อมูลมาไม่ครบ (บางชีตอ่านไม่ขึ้น) = แถบเหลืองบอกชื่อชีต แทนที่จะค้างเปล่า
+  const wb = document.getElementById('warnBanner'), wt = document.getElementById('warnText');
+  if(wb){
+    const bad = (j && j.failedSheets) || [];
+    wb.classList.toggle('hidden', !(j && j.partial));
+    if(wt && j && j.partial) wt.textContent = 'อ่าน ' + bad.map(b=>b.sheet).join(', ') + ' ไม่สำเร็จ — ตัวเลขที่เห็นอาจขาดบางส่วน ถ้าเป็นซ้ำให้เปิดชีตนั้นตรวจแถว/สูตรผิดปกติ';
+  }
 }
 // โหลดครั้งแรก: ใช้ action=init ครั้งเดียว (เร็ว ~ครึ่งหนึ่ง) ถ้า backend เก่าให้ fallback 2 calls แบบขนาน
 async function loadData(){
@@ -782,12 +790,12 @@ async function loadData(){
   if(first) setLoading(true); else setNet('⏳ กำลังซิงก์...');
   try{
     let j = null;
-    try { j = await fetchJSON(APPS_SCRIPT_URL+'?action=init&t='+Date.now(), {}, 25000); }
+    try { j = await fetchJSON(APPS_SCRIPT_URL+'?action=init&t='+Date.now(), {}, 45000); }
     catch(e){ j = null; }
     if(!j || !j.ok || !Array.isArray(j.rows)){
       // fallback: backend เก่าที่ยังไม่มี action=init (จะตอบ ok แต่ไม่มี rows) — ยิงขนาน ไม่รันทีละตัว
       const [r1, r2] = await Promise.all([
-        fetchJSON(APPS_SCRIPT_URL+'?action=list&t='+Date.now(), {}, 25000),
+        fetchJSON(APPS_SCRIPT_URL+'?action=list&t='+Date.now(), {}, 45000),
         fetchJSON(APPS_SCRIPT_URL+'?action=listConfig&t='+Date.now(), {}, 25000).catch(()=>null)
       ]);
       if(!r1 || !r1.ok) throw new Error((r1&&r1.error)||'โหลดไม่สำเร็จ');
@@ -802,9 +810,9 @@ async function loadData(){
     refreshAdminUI();
     BOOT_DONE = true;
   }catch(err){
-    if(String(err&&err.name)==='AbortError') return;
-    if(first) alert('โหลดข้อมูลไม่สำเร็จ: '+err.message+'\nตรวจว่า Deploy Web App เป็น Anyone แล้ว');
-    else setNet('โหลดไม่สำเร็จ ลองกดรีเฟรช');
+    const to = String(err&&err.name)==='AbortError';
+    if(first) alert(to ? 'โหลดข้อมูลหมดเวลา (45 วินาที — เน็ตช้าหรือข้อมูลเยอะ) กดรีเฟรชลองใหม่' : 'โหลดข้อมูลไม่สำเร็จ: '+err.message+'\nตรวจว่า Deploy Web App เป็น Anyone แล้ว');
+    else setNet(to ? 'หมดเวลา ลองกดรีเฟรช' : 'โหลดไม่สำเร็จ ลองกดรีเฟรช');
   }
   if(first) setLoading(false); else setNet('');
 }
