@@ -443,8 +443,9 @@ function submitWork_(d) {
     ? ('G' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyyMMddHHmmss'))
     : '';
   // กันเลือกวิชาผิดห้อง (เช็คทุกคนในกลุ่ม — ชื่อวิชาซ้ำต่างห้องผ่านถ้าห้องใดห้องหนึ่งตรง)
+  // เปิด SS ครั้งเดียวแล้วใช้ซ้ำถึงตอน appendRow (ลด cold-start ~1-2 วิ กัน timeout ตอนส่ง)
+  const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
   try {
-    const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
     const shS = ss.getSheetByName(CONFIG.SHEET_SUBJECTS);
     if (shS && shS.getLastRow() >= 2) {
       const sv = shS.getRange(2, 1, shS.getLastRow() - 1, 2).getValues();
@@ -493,7 +494,7 @@ function submitWork_(d) {
     fileUrl = 'https://drive.google.com/file/d/' + driveFileId + '/view';
   }
   const now = new Date();
-  const ws = getWorksSheet_(term.year, term.semester);
+  const ws = ensureHeaders_(getOrCreateSheet_(ss, term.sheetName, CONFIG.HEADERS));
   members.forEach(function(m) {
     ws.appendRow([now, m.fullName, m.classroom, subject, category, title,
       String(d.description || ''), fileKind, fileName, fileUrl, driveFileId, 'รอตรวจ', '', term.year, term.semester, groupId]);
