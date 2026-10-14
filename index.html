@@ -266,9 +266,16 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
       <div id="tDashStudents" class="space-y-1.5 max-h-[520px] overflow-auto"></div>
     </div>
     <div class="lg:col-span-3">
+      <div class="flex justify-end mb-2">
+        <div class="bg-white border rounded-xl p-1 flex gap-1 text-sm">
+          <button id="viewTableBtn" onclick="setTeacherView('table')" class="px-3 py-1.5 rounded-lg">📋 ตาราง</button>
+          <button id="viewCardBtn" onclick="setTeacherView('card')" class="px-3 py-1.5 rounded-lg">🃏 การ์ด</button>
+        </div>
+      </div>
       <div id="tBatchBar" class="hidden bg-indigo-600 text-white rounded-2xl p-3 mb-3">
         <div class="flex flex-wrap gap-2 items-center text-sm">
           <b id="tBatchCount">เลือก 0 ชิ้น</b>
+          <button onclick="selectAllBatch()" class="px-3 py-1.5 rounded-xl bg-white/20 text-white text-sm">☑ เลือกทั้งหมดที่แสดง</button>
           <select id="tBatchStatus" class="text-slate-800 border rounded-xl px-2 py-1.5 text-sm bg-white"><option>ผ่าน</option><option>ต้องแก้ไข</option><option>รอตรวจ</option></select>
           <input id="tBatchComment" placeholder="💬 ความเห็นเดียวกัน (ว่าง=คงเดิม)" class="border rounded-xl px-2 py-1.5 text-sm flex-1 min-w-[140px] text-slate-800">
           <input id="tBatchScore" inputmode="decimal" placeholder="⭐ คะแนนเดียวกัน (ว่าง=คงเดิม)" class="border rounded-xl px-2 py-1.5 text-sm w-48 text-slate-800">
@@ -1341,6 +1348,43 @@ function pickTeacherStudentByIdx(i){
   document.getElementById('tDashStudent').value = o.name + '||' + o.classroom;
   renderTeacherDash();
 }
+let T_VIEW = 'table'; // 'table' = ทะเบียนเป็นระเบียบ (ค่าเริ่มต้น), 'card' = การ์ดดูรูปใหญ่
+let T_DETAIL = []; // งานของนักเรียนที่กำลังดูอยู่ (ใช้ปุ่มเลือกทั้งหมด)
+function setTeacherView(v){
+  T_VIEW = (v === 'card') ? 'card' : 'table';
+  renderTeacherStudentDetail();
+}
+// ปุ่ม +/− ข้างช่องคะแนน (เร็วกว่าพิมพ์): ทศนิยมได้ ต่ำสุด 0
+function stepScore(inputId, d){
+  const el = document.getElementById(inputId); if(!el || el.disabled) return;
+  const cur = parseFloat(el.value);
+  el.value = Math.max(0, Math.round(((isFinite(cur) ? cur : 0) + d) * 10) / 10);
+}
+function selectAllBatch(){
+  const boxes = document.querySelectorAll('#tDashDetail input[type="checkbox"][data-sheet]');
+  if(!boxes.length) return;
+  boxes.forEach(el=>{ el.checked = true; T_BATCH.add((el.dataset.sheet || 'ผลงาน') + '||' + el.dataset.row); });
+  updateBatchBar();
+}
+function teacherTableHTML(rows){
+  if(!rows.length) return '<p class="text-sm text-slate-400">คนนี้ยังไม่มีงานในวิชาของคุณ</p>';
+  return `<div class="bg-white rounded-2xl border overflow-hidden"><div class="overflow-auto max-h-[560px]"><table class="w-full text-sm min-w-[780px]">
+    <thead class="bg-slate-50 sticky top-0 text-left text-xs text-slate-400"><tr><th class="px-2 py-2 text-center">☑</th><th class="px-2 py-2">ชิ้นงาน</th><th class="px-2 py-2">สถานะ</th><th class="px-2 py-2">⭐ คะแนน</th><th class="px-2 py-2">💬 ความเห็น</th><th class="px-2 py-2">ตรวจ</th></tr></thead>
+    <tbody>${rows.map(r=>{
+      const th = thumb(r);
+      const sn = esc(r.sheetName || 'ผลงาน');
+      const key = (r.sheetName || 'ผลงาน') + '||' + r.row;
+      const scId = 'bsc-' + (r.sheetName || '') + '-' + r.row, cmtId = 'bcmt-' + (r.sheetName || '') + '-' + r.row;
+      return `<tr class="border-t hover:bg-slate-50">
+        <td class="px-2 py-1.5 text-center"><input type="checkbox" onchange="toggleBatch(this)" data-sheet="${sn}" data-row="${r.row}" ${T_BATCH.has(key)?'checked':''} title="ติ๊กเพื่อตรวจพร้อมกัน" class="w-4 h-4 accent-indigo-600"></td>
+        <td class="px-2 py-1.5"><div class="flex gap-2 items-center">${th?`<img src="${th}" loading="lazy" decoding="async" class="w-10 h-10 rounded-lg object-cover shrink-0" alt="" data-fid="${r.driveFileId}" data-fsz="w200" data-kind="${r.fileKind}" onerror="thumbFailover(this)">`:`<div class="w-10 h-10 rounded-lg bg-slate-100 grid place-items-center text-xl shrink-0">${fileIcon(r.fileKind)}</div>`}<div class="min-w-0"><p class="font-medium truncate max-w-[220px]" title="${esc(r.title)}">${esc(r.title)}</p><p class="text-xs text-slate-400">${esc(r.subject)} • ${esc(r.timestamp)}${r.gradedBy?` • ✔ ${esc(r.gradedBy)}`:''}</p></div></div></td>
+        <td class="px-2 py-1.5 whitespace-nowrap">${statusBadge(r.status)} ${scoreBadge(r.score)}</td>
+        <td class="px-2 py-1.5"><div class="flex items-center gap-1"><button onclick="stepScore('${scId}',-1)" class="w-7 h-7 rounded-lg bg-slate-100 text-sm font-bold" title="ลด 1">−</button><input id="${scId}" value="${esc(r.score||'')}" inputmode="decimal" placeholder="—" title="คะแนน (ตัวเลข)" class="border rounded-lg px-1 py-1 text-sm w-14 text-center"><button onclick="stepScore('${scId}',1)" class="w-7 h-7 rounded-lg bg-slate-100 text-sm font-bold" title="เพิ่ม 1">+</button></div></td>
+        <td class="px-2 py-1.5"><input id="${cmtId}" value="${esc(r.comment||'')}" placeholder="ความเห็น..." class="border rounded-lg px-2 py-1 text-sm w-36"></td>
+        <td class="px-2 py-1.5 whitespace-nowrap"><button data-busy="0" onclick="setStatus('${sn}',${r.row},'ผ่าน',this,'bcmt-')" class="px-2 py-1 rounded-lg bg-emerald-600 text-white text-xs disabled:opacity-50">✅</button> <button data-busy="0" onclick="setStatus('${sn}',${r.row},'ต้องแก้ไข',this,'bcmt-')" class="px-2 py-1 rounded-lg bg-red-500 text-white text-xs disabled:opacity-50">✏️</button></td>
+      </tr>`;
+    }).join('')}</tbody></table></div></div>`;
+}
 function renderTeacherStudentDetail(){
   const box = document.getElementById('tDashDetail'); if(!box) return;
   const key = document.getElementById('tDashStudent')?.value || '';
@@ -1349,7 +1393,13 @@ function renderTeacherStudentDetail(){
   const nm = key.slice(0, sep), cl = key.slice(sep + 2);
   const rows = teacherRows().filter(r=>r.fullName===nm && r.classroom===cl);
   const wait = rows.filter(r=>r.status==='รอตรวจ').length;
-  box.innerHTML = `<div class="bg-white rounded-2xl border p-4"><p class="font-semibold">👦 ${esc(nm)} <span class="text-sm font-normal text-slate-400">(${esc(cl)})</span></p><p class="text-xs text-slate-500 mt-0.5">ทั้งหมด ${rows.length} ชิ้น • ⏳ รอตรวจ ${wait} ชิ้น (ใหม่สุดก่อน)</p></div>` + (rows.map(r=>{
+  T_DETAIL = rows;
+  const cb = document.getElementById('viewCardBtn'), tb = document.getElementById('viewTableBtn');
+  if(cb) cb.className = T_VIEW === 'card' ? 'px-3 py-1.5 rounded-lg bg-slate-900 text-white' : 'px-3 py-1.5 rounded-lg';
+  if(tb) tb.className = T_VIEW === 'table' ? 'px-3 py-1.5 rounded-lg bg-slate-900 text-white' : 'px-3 py-1.5 rounded-lg';
+  const head = `<div class="bg-white rounded-2xl border p-4"><p class="font-semibold">👦 ${esc(nm)} <span class="text-sm font-normal text-slate-400">(${esc(cl)})</span></p><p class="text-xs text-slate-500 mt-0.5">ทั้งหมด ${rows.length} ชิ้น • ⏳ รอตรวจ ${wait} ชิ้น (ใหม่สุดก่อน)</p></div>`;
+  if(T_VIEW === 'table'){ box.innerHTML = head + teacherTableHTML(rows); return; }
+  box.innerHTML = head + (rows.map(r=>{
     const th = thumb(r);
     return `<div class="bg-white rounded-2xl border p-4 flex flex-col md:flex-row gap-4">
       <div class="md:w-36 shrink-0">${th?`<img src="${th}" loading="lazy" decoding="async" class="w-full h-24 object-cover rounded-xl" alt="" data-fid="${r.driveFileId}" data-fsz="w200" data-kind="${r.fileKind}" onerror="thumbFailover(this)">`:`<div class="w-full h-24 rounded-xl bg-slate-100 grid place-items-center text-3xl">${fileIcon(r.fileKind)}</div>`}</div>
