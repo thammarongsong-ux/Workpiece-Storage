@@ -427,7 +427,18 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
 <script>
 let ALL = [];
 let fileKind = 'image';
-let ADMIN = JSON.parse(sessionStorage.getItem('Workpiece Storage_admin')||'null');
+// โหลด session แบบกันพัง: ค่าใน storage เสีย (JSON ขาด/เขียนค้าง) ต้องไม่ทำสคริปต์ตายทั้งหน้า
+function loadSession(){
+  try{ return JSON.parse(sessionStorage.getItem('Workpiece Storage_admin')||'null'); }
+  catch(e){ try{ sessionStorage.removeItem('Workpiece Storage_admin'); }catch(_){} return null; }
+}
+function saveSession(){
+  try{
+    if(ADMIN) sessionStorage.setItem('Workpiece Storage_admin', JSON.stringify(ADMIN));
+    else sessionStorage.removeItem('Workpiece Storage_admin');
+  }catch(e){ /* storage เต็ม/โดนบล็อก — ใช้งานต่อแบบไม่จำ session */}
+}
+let ADMIN = loadSession();
 if(ADMIN && !ADMIN.role) ADMIN.role = 'admin'; // session เก่าก่อนมีระบบครู ให้นับเป็น admin
 let TEACHERS = []; // บัญชีครู (Admin เท่านั้นที่โหลดได้ รวม PASS ไว้รีเซ็ต)
 let SUBJECT_ROWS = [];
@@ -836,12 +847,12 @@ async function doLogin(){
   try{
     const j=await fetchJSON(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'login',adminUser:u,adminPass:p})},20000);
     if(!j.ok) throw new Error(j.error || 'USER หรือ PASS ไม่ถูกต้อง');
-    ADMIN={user:u,pass:p,role:j.role||'admin',name:j.name||u,subjects:j.subjects||[]}; sessionStorage.setItem('Workpiece Storage_admin',JSON.stringify(ADMIN));
+    ADMIN={user:u,pass:p,role:j.role||'admin',name:j.name||u,subjects:j.subjects||[]}; saveSession();
     msg.innerHTML='<span class="text-emerald-600">✅ เข้าสู่ระบบสำเร็จ ('+(ADMIN.role==='teacher' ? 'ครู '+esc(ADMIN.name) : 'Admin')+')</span>';
     refillSubjects(); refreshAdminUI();
   }catch(e){ const t = String(e&&e.name)==='AbortError' ? 'เครือข่ายหมดเวลา (20 วินาที) กรุณาลองใหม่' : e.message; msg.innerHTML='<span class="text-red-600">❌ '+esc(t)+'</span>'; }
 }
-function doLogout(){ ADMIN=null; TEACHERS=[]; sessionStorage.removeItem('Workpiece Storage_admin'); document.getElementById('adUser').value='';document.getElementById('adPass').value=''; refillSubjects(); refreshAdminUI(); }
+function doLogout(){ ADMIN=null; TEACHERS=[]; saveSession(); document.getElementById('adUser').value='';document.getElementById('adPass').value=''; refillSubjects(); refreshAdminUI(); }
 // ---------- Admin สลับบทบาทเป็นครู (ตรวจ/ให้คะแนน/แก้ไขในขอบเขตวิชาครูคนนั้น แล้วสลับกลับได้) ----------
 // ใช้ USER/PASS จริงของครู (admin โหลดมาได้) backend จึงเห็นเป็นครูคนนั้นแท้ๆ ทั้งสิทธิ์และชื่อผู้ตรวจ
 function switchToTeacher(row){
@@ -851,14 +862,14 @@ function switchToTeacher(row){
   if(!confirm(`สลับบทบาทเป็นครู "${t.name}" ?\nตรวจ/ให้คะแนนได้เฉพาะวิชา: ${(t.subjects||[]).join(', ')||'—'}\n(ปุ่มลบยังเป็นของ Admin — สลับกลับได้ตลอด)`)) return;
   const au = ADMIN.user, ap = ADMIN.pass;
   ADMIN = {user:t.user, pass:t.pass, role:'teacher', name:t.name, subjects:t.subjects||[], switchedByAdmin:true, adminUser:au, adminPass:ap};
-  sessionStorage.setItem('Workpiece Storage_admin', JSON.stringify(ADMIN));
+  saveSession();
   refillSubjects(); refreshAdminUI();
   document.querySelector('[data-tab="teacher"]').click();
 }
 function switchBackToAdmin(){
   if(!ADMIN || !ADMIN.switchedByAdmin || !ADMIN.adminUser) return;
   ADMIN = {user:ADMIN.adminUser, pass:ADMIN.adminPass, role:'admin', name:ADMIN.adminUser, subjects:[]};
-  sessionStorage.setItem('Workpiece Storage_admin', JSON.stringify(ADMIN));
+  saveSession();
   refillSubjects(); refreshAdminUI();
 }
 function quickSwitch(){
@@ -875,7 +886,7 @@ function fillQuickSwitch(){
 function isAuthError(m){ return /ต้องล็อกอิน|USER หรือ PASS|บัญชีครูไม่ถูกต้อง|เฉพาะ Admin/.test(String(m||'')); }
 function forceLogout(msg){
   ADMIN=null; TEACHERS=[];
-  try{ sessionStorage.removeItem('Workpiece Storage_admin'); }catch(e){}
+  saveSession();
   const u=document.getElementById('adUser'); if(u) u.value='';
   const p=document.getElementById('adPass'); if(p) p.value='';
   refillSubjects(); refreshAdminUI();
