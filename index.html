@@ -282,7 +282,7 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
       <button id="chkViewTableBtn" onclick="setCheckView('table')" class="px-3 py-1.5 rounded-lg">📋 ตาราง</button>
       <button id="chkViewCardBtn" onclick="setCheckView('card')" class="px-3 py-1.5 rounded-lg">🃏 การ์ด</button>
     </div>
-    <select id="chkGroup" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ไม่จัดกลุ่ม</option><option value="subject">📚 จัดกลุ่มตามวิชา</option><option value="category">📂 จัดกลุ่มตามประเภทงาน</option><option value="student">👦 จัดกลุ่มตามนักเรียน</option><option value="assign">📌 จัดกลุ่มตามใบสั่งงาน</option></select>
+    <select id="chkGroup" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ไม่จัดกลุ่ม</option><option value="subject">📚 จัดกลุ่มตามวิชา</option><option value="category">📂 จัดกลุ่มตามประเภทงาน</option><option value="student">👦 จัดกลุ่มตามนักเรียน (เฉพาะคนที่มีงาน)</option><option value="roster">🧑‍🎓 จัดกลุ่มตามรายชื่อ (รวมคนยังไม่ส่ง)</option><option value="assign">📌 จัดกลุ่มตามใบสั่งงาน</option></select>
   </div>
   <div id="chkList" class="space-y-3"></div>
   <div class="text-center mt-4"><button id="chkMore" onclick="chkShowMore()" class="hidden px-5 py-2 rounded-xl bg-slate-900 text-white text-sm">โหลดเพิ่ม ↓</button></div>
@@ -1361,6 +1361,23 @@ function checkTableHTML(rows){
       g.smap[sk].list.push(r); g.list.push(r);
     });
   }
+  else if(gmode==='roster'){
+    // รายชื่อนักเรียนจากชีต (รวมคนยังไม่ส่ง) — กรองตามห้องที่เลือกอยู่, มีงานรอตรวจขึ้นก่อน
+    const clsNow = document.getElementById('chkClass')?.value || '';
+    const roster = STUDENTS.filter(s=>!clsNow || String(s.classroom || '').trim()===clsNow);
+    const inRoster = new Set(roster.map(s=>s.fullName + '||' + s.classroom));
+    groups = roster.map(s=>{
+      const list = rows.filter(r=>r.fullName===s.fullName && String(r.classroom || '')===String(s.classroom || ''));
+      return {label:'🧑‍🎓 ' + s.fullName + (s.classroom ? ' (' + s.classroom + ')' : ''), list:list};
+    });
+    const orphans = rows.filter(r=>!inRoster.has(r.fullName + '||' + r.classroom));
+    if(orphans.length) groups.push({label:'❓ นอกบัญชีรายชื่อ (ลบชื่อไปแล้ว/สะกดต่าง)', list:orphans});
+    groups.sort((a,b)=>{
+      const aw = a.list.filter(r=>r.status==='รอตรวจ').length, bw = b.list.filter(r=>r.status==='รอตรวจ').length;
+      if(bw !== aw) return bw - aw;
+      return String(a.label).localeCompare(String(b.label), 'th');
+    });
+  }
   else{
     const gmap = Object.create(null); groups = [];
     rows.forEach(r=>{
@@ -1386,7 +1403,8 @@ function checkTableHTML(rows){
       gr.subs.forEach(s=>{ h += groupHead(s.label, s.list, true); h += s.list.map(r=>checkRowHTML(r)).join(''); });
       return h;
     }
-    return groupHead(gr.label, gr.list, false) + gr.list.map(r=>checkRowHTML(r)).join('');
+    const rowsHtml = gr.list.length ? gr.list.map(r=>checkRowHTML(r)).join('') : '<tr><td colspan="8" class="px-3 py-2 text-center text-xs text-slate-400">— ยังไม่มีงานส่ง —</td></tr>';
+    return groupHead(gr.label, gr.list, false) + rowsHtml;
   }).join('');
 }
 function checkRowHTML(r){
