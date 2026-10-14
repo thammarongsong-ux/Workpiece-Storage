@@ -17,7 +17,7 @@ let SUBJECTS = ['ภาษาไทย','คณิตศาสตร์','วิ
 let STUDENTS = [];
 let TERMS = []; // [{year, semester, termId, sheetName}] จาก backend
 let CURRENT_TERM = null; // {year, semester}
-const BACKEND_VERSION = 'term-8'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
+const BACKEND_VERSION = 'term-9'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
 const CATEGORIES = [
   { name:'ใบงาน', icon:'📝', color:'from-amber-400 to-orange-500' },
   { name:'โครงงาน', icon:'🔬', color:'from-emerald-400 to-teal-600' },
@@ -253,12 +253,31 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
     </div>
   </div>
   <div id="tDashSubjects" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"></div>
+  <div class="bg-white rounded-2xl border p-4 mb-4">
+    <div class="flex flex-wrap gap-2 items-center mb-2">
+      <h3 class="font-semibold flex-1">📊 สรุปตามชั้นเรียน <span class="text-xs font-normal text-slate-400">ชั้น &gt; ชิ้นงาน &gt; คะแนนรายคน</span></h3>
+      <select id="tSumClass" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกห้อง</option></select>
+    </div>
+    <div id="tSumGroups" class="space-y-3"></div>
+  </div>
   <div class="grid lg:grid-cols-5 gap-4">
     <div class="lg:col-span-2 bg-white rounded-2xl border p-4">
       <h3 class="font-semibold mb-2">🧑‍🎓 ส่งงานรายคน <span id="tDashStudCount" class="text-xs text-slate-400"></span></h3>
       <div id="tDashStudents" class="space-y-1.5 max-h-[520px] overflow-auto"></div>
     </div>
-    <div class="lg:col-span-3"><div id="tDashDetail" class="space-y-3"></div></div>
+    <div class="lg:col-span-3">
+      <div id="tBatchBar" class="hidden bg-indigo-600 text-white rounded-2xl p-3 mb-3">
+        <div class="flex flex-wrap gap-2 items-center text-sm">
+          <b id="tBatchCount">เลือก 0 ชิ้น</b>
+          <select id="tBatchStatus" class="text-slate-800 border rounded-xl px-2 py-1.5 text-sm bg-white"><option>ผ่าน</option><option>ต้องแก้ไข</option><option>รอตรวจ</option></select>
+          <input id="tBatchComment" placeholder="💬 ความเห็นเดียวกัน (ว่าง=คงเดิม)" class="border rounded-xl px-2 py-1.5 text-sm flex-1 min-w-[140px] text-slate-800">
+          <input id="tBatchScore" inputmode="decimal" placeholder="⭐ คะแนนเดียวกัน (ว่าง=คงเดิม)" class="border rounded-xl px-2 py-1.5 text-sm w-48 text-slate-800">
+          <button id="tBatchSave" onclick="gradeBatch(this)" class="px-3 py-1.5 rounded-xl bg-emerald-500 text-white text-sm font-semibold disabled:opacity-50">💾 บันทึกที่เลือก</button>
+          <button onclick="clearBatch()" class="px-3 py-1.5 rounded-xl bg-white/20 text-white text-sm">ล้าง</button>
+        </div>
+      </div>
+      <div id="tDashDetail" class="space-y-3"></div>
+    </div>
   </div>
 </section>
 
@@ -620,6 +639,16 @@ function statusBadge(s){
   if(s==='ผ่าน') return '<span class="badge bg-emerald-100 text-emerald-700">✅ ผ่าน</span>';
   if(s==='ต้องแก้ไข') return '<span class="badge bg-red-100 text-red-700">✏️ ต้องแก้ไข</span>';
   return '<span class="badge bg-amber-100 text-amber-700">⏳ รอตรวจ</span>';
+}
+function scoreBadge(s){
+  s = String(s ?? '').trim();
+  if(!s) return '';
+  return '<span class="badge bg-amber-100 text-amber-700">⭐ ' + esc(s) + '</span>';
+}
+function avgScore(list){
+  const n = list.map(v=>parseFloat(v)).filter(v=>isFinite(v));
+  if(!n.length) return null;
+  return Math.round(n.reduce((a,b)=>a+b,0)/n.length*10)/10;
 }
 function fileIcon(k){ return k==='pdf'?'📕':k==='link'?'🔗':'🖼️'; }
 
@@ -1171,9 +1200,9 @@ function renderSummary(){
   if(cnt) cnt.textContent = `แสดง ${show.length}/${rows.length} แถว`;
 }
 function exportCSV(){
-  const head=['ปีการศึกษา','ภาคเรียน','Timestamp','ชื่อ-สกุล','ชั้น','วิชา','ประเภท','ชื่อชิ้นงาน','คำอธิบาย','ชนิดไฟล์','File URL','สถานะ','ความเห็นครู','ผู้ตรวจ','Sheet','รหัสกลุ่ม'];
+  const head=['ปีการศึกษา','ภาคเรียน','Timestamp','ชื่อ-สกุล','ชั้น','วิชา','ประเภท','ชื่อชิ้นงาน','คำอธิบาย','ชนิดไฟล์','File URL','สถานะ','ความเห็นครู','คะแนน','ผู้ตรวจ','Sheet','รหัสกลุ่ม'];
   const q2=v=>`"${String(v??'').replace(/"/g,'""')}"`;
-  const lines=[head.join(',')].concat(sumFiltered().map(r=>[q2(r.academicYear),q2(r.semester),r.timestamp,q2(r.fullName),q2(r.classroom),q2(r.subject),q2(r.category),q2(r.title),q2(r.description),r.fileKind,q2(r.fileUrl),q2(r.status),q2(r.comment),q2(r.gradedBy||''),q2(r.sheetName||''),q2(r.groupId||'')].join(',')));
+  const lines=[head.join(',')].concat(sumFiltered().map(r=>[q2(r.academicYear),q2(r.semester),r.timestamp,q2(r.fullName),q2(r.classroom),q2(r.subject),q2(r.category),q2(r.title),q2(r.description),r.fileKind,q2(r.fileUrl),q2(r.status),q2(r.comment),q2(r.score||''),q2(r.gradedBy||''),q2(r.sheetName||''),q2(r.groupId||'')].join(',')));
   const blob=new Blob(["\ufeff"+lines.join('\n')],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Workpiece Storage_export.csv';a.click();
 }
@@ -1193,13 +1222,14 @@ function renderCheck(){
     return `<div class="bg-white rounded-2xl border p-4 flex flex-col md:flex-row gap-4" id="chk-${esc(r.sheetName||'ผลงาน')}-${r.row}">
       <div class="md:w-40 shrink-0">${th?`<img src="${th}" loading="lazy" decoding="async" class="w-full h-28 object-cover rounded-xl" alt="" data-fid="${r.driveFileId}" data-fsz="w200" data-kind="${r.fileKind}" onerror="thumbFailover(this)">`:`<div class="w-full h-28 rounded-xl bg-slate-100 grid place-items-center text-4xl">${fileIcon(r.fileKind)}</div>`}</div>
       <div class="flex-1">
-        <p class="font-semibold">${esc(r.title)} ${statusBadge(r.status)} ${termBadge(r)} ${groupBadge(r)}${can?'':' <span class="badge bg-slate-100 text-slate-500">🔒 วิชาอื่น</span>'}</p>
+        <p class="font-semibold">${esc(r.title)} ${statusBadge(r.status)} ${scoreBadge(r.score)} ${termBadge(r)} ${groupBadge(r)}${can?'':' <span class="badge bg-slate-100 text-slate-500">🔒 วิชาอื่น</span>'}</p>
         <p class="text-sm text-slate-500">👦 ${esc(r.fullName)}${r.classroom?' ('+esc(r.classroom)+')':''} • 📚 ${esc(r.subject)} • 📂 ${esc(r.category)} • ${esc(r.timestamp)} • ชีต ${esc(r.sheetName||'ผลงาน')}${r.gradedBy?` • ✔ ${esc(r.gradedBy)}`:''}</p>
         ${groupLine(r)}
         ${r.description?`<p class="text-sm mt-1">${esc(r.description)}</p>`:''}
         <a href="${safeUrl(r.fileUrl)}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline">เปิดไฟล์ต้นฉบับ →</a>
         <div class="flex flex-wrap gap-2 mt-3">
           <input id="cmt-${esc(r.sheetName||'')}-${r.row}" value="${esc(r.comment||'')}" placeholder="💬 ความเห็นครู..." ${can?'':'disabled'} class="border rounded-xl px-3 py-1.5 text-sm flex-1 min-w-[180px] disabled:bg-slate-100">
+          <input id="sc-${esc(r.sheetName||'')}-${r.row}" value="${esc(r.score||'')}" inputmode="decimal" placeholder="⭐ คะแนน" title="คะแนน (ตัวเลข ว่างได้)" ${can?'':'disabled'} class="border rounded-xl px-3 py-1.5 text-sm w-24 disabled:bg-slate-100">
           <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ผ่าน',this)" ${can?'':'disabled'} class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-sm disabled:opacity-50">✅ ผ่าน</button>
           <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ต้องแก้ไข',this)" ${can?'':'disabled'} class="px-3 py-1.5 rounded-xl bg-red-500 text-white text-sm disabled:opacity-50">✏️ แก้ไข</button>
           <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'รอตรวจ',this)" ${can?'':'disabled'} class="px-3 py-1.5 rounded-xl bg-slate-200 text-sm disabled:opacity-50">⏳ รอตรวจ</button>
@@ -1216,14 +1246,16 @@ async function setStatus(sheetName,row,status,btn,cmtPrefix){
   if(ref0 && !canGradeSubject(ref0.subject)) return alert('🔒 วิชา "'+ref0.subject+'" ไม่ใช่ของคุณ (คุณตรวจได้: '+teacherSubjects().join(', ')+')');
   if(btn){ if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true; btn.classList.add('opacity-60'); }
   const cmt=(document.getElementById((cmtPrefix||'cmt-')+sheetName+'-'+row)?.value||'');
+  const scPre=(cmtPrefix||'cmt-').replace('cmt','sc');
+  const scVal=((document.getElementById(scPre+sheetName+'-'+row)?.value)||'').trim();
   const ref = ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row));
   try{
     let j;
     try{
-      j = await fetchJSON(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'updateStatus',row,status,comment:cmt,sheetName,expectFullName:ref?ref.fullName:'',expectTitle:ref?ref.title:'',...(ref?termKeys(ref):{}),...adminAuth()})},30000);
+      j = await fetchJSON(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'updateStatus',row,status,comment:cmt,score:scVal,sheetName,expectFullName:ref?ref.fullName:'',expectTitle:ref?ref.title:'',...(ref?termKeys(ref):{}),...adminAuth()})},30000);
     }catch(fe){ throw new Error(String(fe&&fe.name)==='AbortError' ? 'เครือข่ายหมดเวลา (30 วินาที) กรุณาลองใหม่' : (fe.message||'เชื่อมต่อไม่สำเร็จ')); }
     if(!j.ok){ const e2=new Error(j.error); e2.stale=!!j.stale; throw e2; }
-    const it=ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row)); if(it){it.status=status;it.comment=cmt; if(j.gradedBy) it.gradedBy=j.gradedBy;}
+    const it=ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row)); if(it){it.status=status;it.comment=cmt; if(j.gradedBy) it.gradedBy=j.gradedBy; if(j.score!==undefined) it.score=j.score;}
     if(ACTIVE_TAB==='teacher') renderTeacherDash();
     else renderCheck(); // อัปเดตเฉพาะหน้านี้ ไม่โหลดใหม่ทั้งระบบ
     if(ACTIVE_TAB==='dashboard') renderDash();
@@ -1269,7 +1301,8 @@ function renderTeacherDash(){
   document.getElementById('tDashSubjects').innerHTML = teacherSubjects().map(s=>{
     const rs = rows.filter(r=>r.subject===s);
     const wait = rs.filter(r=>r.status==='รอตรวจ').length;
-    return `<div class="bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl p-4"><div class="font-semibold text-sm">📚 ${esc(s)}</div><div class="text-2xl font-bold mt-1">${rs.length} <span class="text-sm font-normal opacity-80">ชิ้น</span></div><div class="text-xs opacity-90 mt-1">⏳ รอตรวจ ${wait} ชิ้น</div></div>`;
+    const avg = avgScore(rs.map(r=>r.score));
+    return `<div class="bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl p-4"><div class="font-semibold text-sm">📚 ${esc(s)}</div><div class="text-2xl font-bold mt-1">${rs.length} <span class="text-sm font-normal opacity-80">ชิ้น</span></div><div class="text-xs opacity-90 mt-1">⏳ รอตรวจ ${wait} ชิ้น${avg!==null?` • ⭐ เฉลี่ย ${avg}`:''}</div></div>`;
   }).join('') || '<p class="text-sm text-slate-400">บัญชีนี้ยังไม่มีวิชาที่กำหนด ติดต่อ Admin</p>';
   // ตัวกรองห้อง (จากห้องที่มีงานในวิชาครูจริง)
   const clEl = document.getElementById('tDashClass');
@@ -1300,6 +1333,8 @@ function renderTeacherDash(){
     `<button onclick="pickTeacherStudentByIdx(${i})" class="w-full text-left border rounded-xl px-3 py-2 text-sm ${(o.name+'||'+o.classroom)===stEl.value?'border-blue-600 bg-blue-50':'hover:bg-slate-50'}"><div class="flex justify-between gap-2"><span class="font-medium">👦 ${esc(o.name)}</span><span class="text-xs text-slate-400 shrink-0">${esc(o.classroom)}</span></div><div class="text-xs mt-1 ${o.wait?'text-amber-600 font-semibold':'text-slate-400'}">รวม ${o.total} ชิ้น • ⏳ ${o.wait} • ✅ ${o.pass} • ✏️ ${o.fix}</div></button>`
   ).join('') || '<p class="text-xs text-slate-400">ยังไม่มีงานในวิชาของคุณ</p>';
   renderTeacherStudentDetail();
+  updateBatchBar();
+  renderTeacherSummary();
 }
 function pickTeacherStudentByIdx(i){
   const o = T_DASH_LIST[i]; if(!o) return;
@@ -1319,18 +1354,110 @@ function renderTeacherStudentDetail(){
     return `<div class="bg-white rounded-2xl border p-4 flex flex-col md:flex-row gap-4">
       <div class="md:w-36 shrink-0">${th?`<img src="${th}" loading="lazy" decoding="async" class="w-full h-24 object-cover rounded-xl" alt="" data-fid="${r.driveFileId}" data-fsz="w200" data-kind="${r.fileKind}" onerror="thumbFailover(this)">`:`<div class="w-full h-24 rounded-xl bg-slate-100 grid place-items-center text-3xl">${fileIcon(r.fileKind)}</div>`}</div>
       <div class="flex-1">
-        <p class="font-semibold text-sm">${esc(r.title)} ${statusBadge(r.status)} ${termBadge(r)}</p>
+        <p class="font-semibold text-sm"><input type="checkbox" onchange="toggleBatch(this)" data-sheet="${esc(r.sheetName||'ผลงาน')}" data-row="${r.row}" ${T_BATCH.has((r.sheetName||'ผลงาน')+'||'+r.row)?'checked':''} title="ติ๊กเพื่อตรวจพร้อมกันหลายชิ้น" class="w-4 h-4 accent-indigo-600 mr-1 align-middle"> ${esc(r.title)} ${statusBadge(r.status)} ${scoreBadge(r.score)} ${termBadge(r)}</p>
         <p class="text-xs text-slate-500">📚 ${esc(r.subject)} • 📂 ${esc(r.category)} • ${esc(r.timestamp)}${r.gradedBy?` • ✔ ${esc(r.gradedBy)}`:''}</p>
         ${r.description?`<p class="text-sm mt-1 text-slate-600">${esc(r.description)}</p>`:''}
         ${r.comment?`<p class="text-xs mt-2 bg-yellow-50 border border-yellow-200 rounded-lg p-2">💬 ครู: ${esc(r.comment)}</p>`:''}
         <a href="${safeUrl(r.fileUrl)}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline">เปิดไฟล์ต้นฉบับ →</a>
         <div class="flex flex-wrap gap-2 mt-2">
           <input id="tcmt-${esc(r.sheetName||'')}-${r.row}" value="${esc(r.comment||'')}" placeholder="💬 ความเห็นครู..." class="border rounded-xl px-3 py-1.5 text-sm flex-1 min-w-[160px]">
+          <input id="tsc-${esc(r.sheetName||'')}-${r.row}" value="${esc(r.score||'')}" inputmode="decimal" placeholder="⭐ คะแนน" title="คะแนน (ตัวเลข ว่างได้)" class="border rounded-xl px-3 py-1.5 text-sm w-24">
           <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ผ่าน',this,'tcmt-')" class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-sm disabled:opacity-50">✅ ผ่าน</button>
           <button data-busy="0" onclick="setStatus('${esc(r.sheetName||'ผลงาน')}',${r.row},'ต้องแก้ไข',this,'tcmt-')" class="px-3 py-1.5 rounded-xl bg-red-500 text-white text-sm disabled:opacity-50">✏️ แก้ไข</button>
         </div>
       </div></div>`;
   }).join('') || '<p class="text-sm text-slate-400">คนนี้ยังไม่มีงานในวิชาของคุณ</p>');
+}
+// ---------- ตรวจหลายชิ้นพร้อมกัน ----------
+let T_BATCH = new Set(); // "sheetName||row"
+function toggleBatch(el){
+  const k = (el.dataset.sheet || 'ผลงาน') + '||' + el.dataset.row;
+  if(el.checked) T_BATCH.add(k); else T_BATCH.delete(k);
+  updateBatchBar();
+}
+function clearBatch(){
+  T_BATCH.clear();
+  const c = document.getElementById('tBatchComment'); if(c) c.value = '';
+  const s = document.getElementById('tBatchScore'); if(s) s.value = '';
+  updateBatchBar(); renderTeacherDash();
+}
+function updateBatchBar(){
+  // ตัดรายการที่หายไปแล้ว (ถูกลบ/กรองออก) กันบันทึกผิดชิ้น
+  T_BATCH.forEach(k=>{
+    const sep = k.lastIndexOf('||');
+    if(!ALL.some(r=>String(r.sheetName)===k.slice(0,sep) && Number(r.row)===Number(k.slice(sep+2)))) T_BATCH.delete(k);
+  });
+  const bar = document.getElementById('tBatchBar'); if(!bar) return;
+  bar.classList.toggle('hidden', !T_BATCH.size);
+  const c = document.getElementById('tBatchCount'); if(c) c.textContent = `เลือก ${T_BATCH.size} ชิ้น`;
+}
+async function gradeBatch(btn){
+  if(!ADMIN) return alert('🔒 ต้องล็อกอินครู/Admin ก่อน');
+  if(!T_BATCH.size) return;
+  const status = document.getElementById('tBatchStatus').value;
+  const comment = document.getElementById('tBatchComment').value.trim();
+  const score = document.getElementById('tBatchScore').value.trim();
+  if(score && !/^-?\d+(\.\d+)?$/.test(score)) return alert('คะแนนต้องเป็นตัวเลข (หรือเว้นว่างไว้)');
+  if(!confirm(`บันทึก ${T_BATCH.size} ชิ้นเป็น "${status}"${score?` คะแนน ${score}`:''}${comment?` พร้อมความเห็นเดียวกัน`:''} ?`)) return;
+  if(btn){ if(btn.dataset.busy==='1') return; btn.dataset.busy='1'; btn.disabled=true; }
+  try{
+    const items = [];
+    T_BATCH.forEach(k=>{
+      const sep = k.lastIndexOf('||');
+      const ref = ALL.find(r=>String(r.sheetName)===k.slice(0,sep) && Number(r.row)===Number(k.slice(sep+2)));
+      if(!ref || !canGradeSubject(ref.subject)) return; // ข้ามวิชาที่ไม่ใช่ของตัวเอง
+      const it = {row:ref.row, sheetName:ref.sheetName, ...termKeys(ref), status, expectFullName:ref.fullName, expectTitle:ref.title};
+      if(comment) it.comment = comment;
+      if(score) it.score = score;
+      items.push(it);
+    });
+    if(!items.length) throw new Error('ไม่มีชิ้นที่ตรวจได้ในที่เลือก (อาจเป็นวิชาอื่น)');
+    const j = await adminPost({action:'gradeMany', items});
+    (j.results || []).forEach(res=>{
+      if(!res.ok) return;
+      const it = ALL.find(r=>String(r.sheetName)===String(res.sheetName) && Number(r.row)===Number(res.row));
+      if(it){ it.status = res.status || it.status; if(res.hasComment) it.comment = res.comment; if(res.hasScore) it.score = res.score; if(res.gradedBy) it.gradedBy = res.gradedBy; }
+    });
+    const bad = (j.results || []).filter(r=>!r.ok);
+    T_BATCH.clear();
+    updateBatchBar(); renderTeacherDash();
+    alert(`✅ บันทึกแล้ว ${j.graded}/${j.total} ชิ้น` + (bad.length ? `\n❌ ไม่สำเร็จ ${bad.length} ชิ้น:\n` + bad.slice(0,5).map(b=>`• แถว ${b.row}: ${b.error}`).join('\n') : ''));
+  }catch(e){ alert('❌ '+e.message); }
+  if(btn){ btn.dataset.busy='0'; btn.disabled=false; }
+}
+// ---------- สรุปตามชั้นเรียน > ชิ้นงาน > คะแนนรายคน ----------
+function renderTeacherSummary(){
+  const box = document.getElementById('tSumGroups'); if(!box) return;
+  const rows = teacherRows();
+  const fc = document.getElementById('tSumClass');
+  const keep = fc.value;
+  const rooms = uniq(rows.map(r=>r.classroom));
+  fc.innerHTML = '<option value="">ทุกห้อง</option>' + rooms.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('');
+  if(rooms.includes(keep)) fc.value = keep;
+  const cls = fc.value;
+  const g = Object.create(null);
+  rows.filter(r=>!cls || r.classroom===cls).forEach(r=>{
+    const k = r.subject + '||' + r.title;
+    if(!g[k]) g[k] = {subject:r.subject, title:r.title, list:[]};
+    g[k].list.push(r);
+  });
+  const groups = Object.values(g).sort((a,b)=> a.subject.localeCompare(b.subject,'th') || a.title.localeCompare(b.title,'th'));
+  box.innerHTML = groups.map(gr=>{
+    const scored = gr.list.filter(r=>String(r.score ?? '').trim() !== '');
+    const avg = avgScore(gr.list.map(r=>r.score));
+    const studs = gr.list.slice().sort((a,b)=> a.fullName.localeCompare(b.fullName,'th'));
+    return `<div class="border rounded-2xl overflow-hidden">
+      <div class="bg-slate-50 px-4 py-2.5 flex flex-wrap gap-2 items-center text-sm">
+        <span class="badge bg-blue-100 text-blue-700">${esc(gr.subject)}</span>
+        <b class="flex-1">${esc(gr.title)}</b>
+        <span class="text-xs text-slate-500">${gr.list.length} ชิ้น • ให้คะแนนแล้ว ${scored.length}/${gr.list.length}${avg!==null?` • ⭐ เฉลี่ย ${avg}`:''}</span>
+      </div>
+      <div class="overflow-auto max-h-64"><table class="w-full text-sm min-w-[520px]">
+        <thead class="bg-white sticky top-0 text-left text-xs text-slate-400"><tr><th class="px-4 py-1.5">นักเรียน</th><th class="px-4 py-1.5">ห้อง</th><th class="px-4 py-1.5">สถานะ</th><th class="px-4 py-1.5">คะแนน</th><th class="px-4 py-1.5">ผู้ตรวจ</th></tr></thead>
+        <tbody>${studs.map(r=>`<tr class="border-t hover:bg-slate-50"><td class="px-4 py-1.5">${esc(r.fullName)}</td><td class="px-4 py-1.5 text-slate-500">${esc(r.classroom)}</td><td class="px-4 py-1.5">${statusBadge(r.status)}</td><td class="px-4 py-1.5 font-semibold">${r.score!==undefined&&String(r.score).trim()!==''?esc(r.score):'<span class="text-slate-300">—</span>'}</td><td class="px-4 py-1.5 text-xs text-slate-400">${esc(r.gradedBy||'')}</td></tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+  }).join('') || '<p class="text-sm text-slate-400">ยังไม่มีงานในวิชาของคุณ</p>';
 }
 function smartAutoClass(nameId, classId){
   const nm = document.getElementById(nameId)?.value || '';
@@ -1360,6 +1487,7 @@ wirePair('sumClass','sumName','sumSubject',renderSummary);
 wirePair('chkClass','chkName','chkSubject',renderCheck);
 document.getElementById('tDashClass').onchange = ()=>{ renderTeacherDash(); };
 document.getElementById('tDashStudent').onchange = ()=>{ renderTeacherStudentDetail(); };
+document.getElementById('tSumClass').onchange = ()=>{ renderTeacherDash(); };
 const dDash = debounce(()=>{ resetPageLimit(renderDash); renderDash(); }, 250);
 const dPad = debounce(()=>{ PAD_LIMIT=PAD_STEP; renderPadlet(); }, 250);
 const dSum = debounce(()=>{ SUM_LIMIT=SUM_STEP; renderSummary(); }, 250);
