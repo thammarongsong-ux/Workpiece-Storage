@@ -803,7 +803,7 @@ function renderPadlet(){
 
 // ===== SUBMIT (บีบรูปก่อนส่ง: อัปโหลดเร็ว ไม่ติด timeout Apps Script) =====
 function toBase64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});}
-// ย่อภาพฝั่ง client: ด้านยาวสุด 1600px, JPEG 0.82 — ไฟล์ 4MB เหลือ ~400-700KB
+// ย่อภาพฝั่ง client: ด้านยาวสุด 1280px, JPEG 0.75 — ไฟล์ 4MB เหลือ ~200-400KB ส่งเร็ว ไม่ติด timeout Apps Script
 function compressImage(file, maxDim, quality){
   return new Promise((resolve)=>{
     if(!file.type.startsWith('image/')) return resolve(null);
@@ -813,13 +813,13 @@ function compressImage(file, maxDim, quality){
       try{
         let w = img.width, h = img.height;
         const m = Math.max(w, h);
-        const max = maxDim||1600;
+        const max = maxDim||1280;
         if(m > max){ const k = max/m; w = Math.round(w*k); h = Math.round(h*k); }
-        else if(file.size < 700*1024){ URL.revokeObjectURL(url); return resolve(null); } // เล็กอยู่แล้ว ไม่ต้องบีบ
+        else if(file.size < 500*1024){ URL.revokeObjectURL(url); return resolve(null); } // เล็กอยู่แล้ว ไม่ต้องบีบ
         const cv = document.createElement('canvas'); cv.width=w; cv.height=h;
         cv.getContext('2d').drawImage(img,0,0,w,h);
         URL.revokeObjectURL(url);
-        resolve(cv.toDataURL('image/jpeg', quality||0.82));
+        resolve(cv.toDataURL('image/jpeg', quality||0.75));
       }catch(e){ URL.revokeObjectURL(url); resolve(null); }
     };
     img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(null); };
@@ -853,15 +853,15 @@ document.getElementById('submitForm').onsubmit = async (e)=>{
       payload.fileName=f.name; payload.mimeType=f.type;
       if(f.type.startsWith('image/')){
         btn.textContent='⏳ กำลังย่อรูป...';
-        const small = await compressImage(f, 1600, 0.82);
+        const small = await compressImage(f, 1280, 0.75);
         if(small){ payload.fileBase64 = small; payload.mimeType='image/jpeg'; }
         else payload.fileBase64 = await toBase64(f);
       } else {
         payload.fileBase64=await toBase64(f);
       }
-      btn.textContent='⏳ กำลังอัปโหลด...';
+      btn.textContent='⏳ กำลังอัปโหลด... (อาจใช้เวลา 10-60 วินาที ห้ามกดซ้ำ)';
     }
-    const res=await fetchJSON(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify(payload)}, 60000);
+    const res=await fetchJSON(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify(payload)}, 120000);
     const j=res;
     if(!j.ok) throw new Error(j.error);
     msg.innerHTML=`<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">✅ ส่งสำเร็จ! ปี ${esc(j.academicYear)} เทอม ${esc(j.semester)} → ชีต ${esc(j.sheetName||'')}${(j.rows||1)>1?` • งานกลุ่ม ${j.rows} คน`:''} <a href="${safeUrl(j.fileUrl)}" target="_blank" rel="noopener" class="underline">เปิดไฟล์</a></div>`;
@@ -872,7 +872,12 @@ document.getElementById('submitForm').onsubmit = async (e)=>{
     cascadeName('fClass','fName','— เลือกชื่อ-สกุล —');
     MEMBERS = []; renderMembers();
     softRefresh(); // ไม่ล้างจอทั้งหน้า
-  }catch(err){ msg.innerHTML=`<p class="text-red-600 text-sm">❌ ${esc(err.message)}</p>`; }
+  }catch(err){
+    const isTimeout = String(err && err.name) === 'AbortError';
+    msg.innerHTML = isTimeout
+      ? '<p class="text-red-600 text-sm">❌ หมดเวลารอ (เกิน 120 วินาที) — ไฟล์อาจอัปโหลดสำเร็จแล้วก็ได้ กรุณาเช็คหน้า Padlet ก่อนกดส่งซ้ำ ถ้าไม่มีค่อยลองใหม่ด้วยรูปที่เล็กลง/เน็ตแรงขึ้น</p>'
+      : `<p class="text-red-600 text-sm">❌ ${esc(err.message)}</p>`;
+  }
   btn.disabled=false; btn.textContent='🚀 ส่งงานเลย';
 };
 
