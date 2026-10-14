@@ -26,11 +26,11 @@ const CONFIG = {
   TEACHER_HEADERS: ['USER', 'PASS', 'ชื่อครู', 'วิชาที่สอน (comma คั่น)'],
   ADMIN_USER: 'FirstStar',
   ADMIN_PASS: '574001',
-  VERSION: 'term-8', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
+  VERSION: 'term-9', // ต้องตรงกับ BACKEND_VERSION ใน index.html (ไว้เช็คว่า Deploy ตัวล่าสุดแล้วหรือยัง)
   HEADERS: [
     'Timestamp','ชื่อ-สกุล','ชั้น/ห้อง','วิชา','ประเภทงาน','ชื่อชิ้นงาน',
     'คำอธิบาย','ชนิดไฟล์','ชื่อไฟล์','File URL','Drive File ID','สถานะตรวจ','ความเห็นครู',
-    'ปีการศึกษา','ภาคเรียน','รหัสกลุ่ม','ผู้ตรวจ'
+    'ปีการศึกษา','ภาคเรียน','รหัสกลุ่ม','ผู้ตรวจ','คะแนน'
   ],
   HEADERS_LEGACY_LEN: 13,
   DEFAULT_SUBJECTS: ['ภาษาไทย','คณิตศาสตร์','วิทยาศาสตร์','ภาษาอังกฤษ','สังคมศึกษา','ศิลปะ','การงานอาชีพ','สุขศึกษา/พละ','คอมพิวเตอร์']
@@ -101,7 +101,7 @@ function setupSheet() {
   Logger.log('setupSheet OK, current term: ' + cur.year + '/' + cur.semester);
 }
 
-/** เติม/อัปเกรดหัวตารางเป็น 17 คอลัมน์ (รองรับชีตเก่า 13/15/16 คอลัมน์โดยไม่ลบข้อมูล) */
+/** เติม/อัปเกรดหัวตารางเป็น 18 คอลัมน์ (รองรับชีตเก่าโดยไม่ลบข้อมูล) */
 function ensureHeaders_(sh) {
   if (!sh) return sh;
   if (sh.getLastRow() === 0) {
@@ -113,7 +113,7 @@ function ensureHeaders_(sh) {
   if (width < CONFIG.HEADERS.length) {
     sh.getRange(1, 1, 1, CONFIG.HEADERS.length).setValues([CONFIG.HEADERS]);
   } else {
-    // เติมเฉพาะหัวที่ขาด (คอลัมน์ 14-17) กันทับหัวเดิมที่ผู้ใช้อาจแก้
+    // เติมเฉพาะหัวที่ขาด (คอลัมน์ 14-18) กันทับหัวเดิมที่ผู้ใช้อาจแก้
     const h14 = String(sh.getRange(1, 14).getValue() || '').trim();
     const h15 = String(sh.getRange(1, 15).getValue() || '').trim();
     const h16 = String(sh.getRange(1, 16).getValue() || '').trim();
@@ -121,6 +121,7 @@ function ensureHeaders_(sh) {
     if (!h15) sh.getRange(1, 15).setValue(CONFIG.HEADERS[14]);
     if (!h16) sh.getRange(1, 16).setValue(CONFIG.HEADERS[15]);
     try { if (!String(sh.getRange(1, 17).getValue() || '').trim()) sh.getRange(1, 17).setValue(CONFIG.HEADERS[16]); } catch (e) {}
+    try { if (!String(sh.getRange(1, 18).getValue() || '').trim()) sh.getRange(1, 18).setValue(CONFIG.HEADERS[17]); } catch (e) {}
   }
   return sh;
 }
@@ -320,7 +321,7 @@ function getBootstrap_(yearFilter, semFilter) {
 
 // POST {action:'submit'|'updateStatus'|'login'|'addSubject'|'editSubject'|'deleteSubject'|'addStudent'|'editStudent'|'deleteStudent'|'deleteWork'|'listTeachers'|'addTeacher'|'editTeacher'|'deleteTeacher', ..., academicYear, semester}
 // งานเขียน (submit/ตรวจ/ลบ/จัดการ) ต้องผ่าน ScriptLock ใน doPost — รายชื่อนี้บอกว่า action ไหนต้องเข้าคิว
-var WRITE_ACTIONS = {submit:1,updateStatus:1,deleteWork:1,backfillTerm:1,addSubject:1,editSubject:1,deleteSubject:1,addStudent:1,editStudent:1,deleteStudent:1,addTeacher:1,editTeacher:1,deleteTeacher:1};
+var WRITE_ACTIONS = {submit:1,updateStatus:1,gradeMany:1,deleteWork:1,backfillTerm:1,addSubject:1,editSubject:1,deleteSubject:1,addStudent:1,editStudent:1,deleteStudent:1,addTeacher:1,editTeacher:1,deleteTeacher:1};
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
@@ -348,6 +349,7 @@ function dispatchPost_(data) {
       return login_(data);
     }
     if (data.action === 'updateStatus') return updateStatus_(data);
+    if (data.action === 'gradeMany') return gradeMany_(data);
     if (data.action === 'deleteWork') return deleteWork_(data);
     if (data.action === 'backfillTerm') return backfillTerm_(data);
     if (data.action === 'addSubject') return addSubject_(data);
@@ -451,6 +453,7 @@ function readWorksSheet_(sh, term) {
       semester: s,
       groupId: String(r[15] || '').trim(),
       gradedBy: String(r[16] || '').trim(),
+      score: String(r[17] || '').trim(),
       termId: term ? term.termId : (y && (s === '1' || s === '2') ? y + '_' + s : ''),
       sheetName: sheetName,
       termLabel: term ? termLabel_(term.year, term.semester) : (y && s ? termLabel_(y, s) : 'คลังเดิม (ก่อนแยกเทอม)')
@@ -628,11 +631,79 @@ function updateStatus_(d) {
   const grader = perm.role === 'admin' ? 'Admin' : (perm.teacher ? perm.teacher.name : '');
   const stamp = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd HH:mm');
   const gradedBy = (grader ? grader + ' ' : '') + stamp;
+  // คะแนน (ไม่บังคับ): ตัวเลขเท่านั้น ส่ง '' = ล้างคะแนนเดิม
+  let scoreOut = '';
+  if (d.hasOwnProperty('score')) {
+    scoreOut = String(d.score || '').trim();
+    if (scoreOut !== '' && !/^-?\d+(\.\d+)?$/.test(scoreOut)) {
+      return jsonOut_({ ok: false, error: 'คะแนนต้องเป็นตัวเลข' });
+    }
+  } else {
+    try { scoreOut = String(sh.getRange(row, 18).getValue() || '').trim(); } catch (e) { scoreOut = ''; }
+  }
   try { if (!String(sh.getRange(1, 17).getValue() || '').trim()) sh.getRange(1, 17).setValue(CONFIG.HEADERS[16]); } catch (e) {}
+  try { if (sh.getLastColumn() < 18 || !String(sh.getRange(1, 18).getValue() || '').trim()) sh.getRange(1, 18).setValue(CONFIG.HEADERS[17]); } catch (e) {}
   sh.getRange(row, 12).setValue(status);
   sh.getRange(row, 13).setValue(comment);
   sh.getRange(row, 17).setValue(gradedBy);
-  return jsonOut_({ ok: true, row: row, status: status, sheetName: sh.getName(), role: perm.role, gradedBy: gradedBy });
+  if (d.hasOwnProperty('score')) sh.getRange(row, 18).setValue(scoreOut);
+  return jsonOut_({ ok: true, row: row, status: status, sheetName: sh.getName(), role: perm.role, gradedBy: gradedBy, score: scoreOut });
+}
+
+/** ตรวจหลายชิ้นพร้อมกัน (Admin ทุกวิชา / ครูเฉพาะวิชาที่สอน) — items:[{row,sheetName(+term keys),status,comment?,score?,expectFullName?,expectTitle?}] */
+function gradeMany_(d) {
+  const items = (d.items instanceof Array) ? d.items : [];
+  if (!items.length) return jsonOut_({ ok: false, error: 'ไม่มีรายการที่ส่งมา' });
+  if (items.length > 100) return jsonOut_({ ok: false, error: 'ตรวจพร้อมกันได้ครั้งละไม่เกิน 100 ชิ้น' });
+  const hdrDone = {};
+  function ensureGradeCols_(sh) {
+    if (hdrDone[sh.getName()]) return;
+    try { if (!String(sh.getRange(1, 17).getValue() || '').trim()) sh.getRange(1, 17).setValue(CONFIG.HEADERS[16]); } catch (e) {}
+    try { if (sh.getLastColumn() < 18 || !String(sh.getRange(1, 18).getValue() || '').trim()) sh.getRange(1, 18).setValue(CONFIG.HEADERS[17]); } catch (e) {}
+    hdrDone[sh.getName()] = 1;
+  }
+  const out = [];
+  let okN = 0;
+  items.forEach(function(it) {
+    try {
+      const row = Number(it.row);
+      const status = String(it.status || '');
+      if (!row || row < 2) throw new Error('row ไม่ถูกต้อง');
+      if (['รอตรวจ', 'ผ่าน', 'ต้องแก้ไข'].indexOf(status) < 0) throw new Error('status ไม่ถูกต้อง');
+      const sh = resolveWorksSheet_(it);
+      if (row > sh.getLastRow()) throw new Error('ไม่พบแถวนี้ในชีต ' + sh.getName());
+      const idv = sh.getRange(row, 2, 1, 5).getValues()[0];
+      const expN = String(it.expectFullName || ''), expT = String(it.expectTitle || '');
+      if ((expN && String(idv[0] || '') !== expN) || (expT && String(idv[4] || '') !== expT)) {
+        const e = new Error('ข้อมูลเปลี่ยนไปแล้ว (มีคนลบ/แก้ไขพร้อมกัน)');
+        e.stale = true; throw e;
+      }
+      const perm = canGradeSubject_(d, String(idv[2] || '').trim());
+      if (!perm.ok) throw new Error(perm.error || 'ต้องล็อกอินก่อน');
+      const hasComment = it.hasOwnProperty('comment');
+      let hasScore = false, scoreOut = '';
+      if (it.hasOwnProperty('score')) {
+        scoreOut = String(it.score || '').trim();
+        if (scoreOut !== '' && !/^-?\d+(\.\d+)?$/.test(scoreOut)) throw new Error('คะแนนต้องเป็นตัวเลข');
+        hasScore = true;
+      }
+      ensureGradeCols_(sh);
+      const grader = perm.role === 'admin' ? 'Admin' : (perm.teacher ? perm.teacher.name : '');
+      const gradedBy = (grader ? grader + ' ' : '') + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd HH:mm');
+      sh.getRange(row, 12).setValue(status);
+      if (hasComment) sh.getRange(row, 13).setValue(String(it.comment || ''));
+      if (hasScore) sh.getRange(row, 18).setValue(scoreOut);
+      sh.getRange(row, 17).setValue(gradedBy);
+      okN++;
+      out.push({ row: row, sheetName: sh.getName(), ok: true, status: status, gradedBy: gradedBy,
+        hasComment: hasComment, comment: hasComment ? String(it.comment || '') : '',
+        hasScore: hasScore, score: scoreOut });
+    } catch (e) {
+      out.push({ row: Number(it.row) || 0, sheetName: String(it.sheetName || ''), ok: false,
+        stale: !!(e && e.stale), error: String((e && e.message) || e) });
+    }
+  });
+  return jsonOut_({ ok: true, graded: okN, total: items.length, results: out });
 }
 
 /** ลบงาน (Admin เท่านั้น) */
