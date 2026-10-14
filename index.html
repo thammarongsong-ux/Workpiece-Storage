@@ -78,6 +78,7 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
 
 <main class="max-w-7xl mx-auto px-4 py-6">
 <div id="verBanner" class="hidden mb-4"><div class="bg-red-50 border border-red-300 text-red-700 rounded-2xl p-3 text-sm">⚠️ <b>Backend ยังเป็นเวอร์ชันเก่า</b> — งานที่ส่งจะไม่บันทึกปี/เทอม และกรองตามปีไม่ได้<br>แก้: วาง <b>Code.gs</b> ตัวใหม่ทับใน Apps Script > Save > รัน <b>setupSheet()</b> 1 ครั้ง > Deploy > Manage deployments > Edit > <b>Version: New version</b> > Deploy แล้วกดรีเฟรชหน้านี้</div></div>
+<div id="switchBar" class="hidden mb-4"><div class="bg-purple-600 text-white rounded-2xl p-3 text-sm flex flex-wrap gap-2 items-center"><span class="flex-1">🔀 คุณกำลังใช้บทบาท <b id="switchBarName"></b> (สลับโดย Admin) — ตรวจ/ให้คะแนนได้เฉพาะวิชาของครูคนนี้</span><button onclick="switchBackToAdmin()" class="px-3 py-1.5 rounded-xl bg-white text-purple-700 text-sm font-semibold">↩ กลับเป็น Admin</button></div></div>
 
 <!-- ============ DASHBOARD ============ -->
 <section id="page-dashboard" class="tabpage active">
@@ -579,6 +580,12 @@ function refreshAdminUI(){
   const on = !!ADMIN;
   const admin = isAdmin();
   const nt = document.getElementById('navTeacher'); if(nt) nt.style.display = isTeacher() ? '' : 'none';
+  const sw = document.getElementById('switchBar');
+  if(sw){
+    const on = !!(ADMIN && ADMIN.switchedByAdmin);
+    sw.classList.toggle('hidden', !on);
+    if(on) document.getElementById('switchBarName').textContent = 'ครู ' + (ADMIN.name || ADMIN.user);
+  }
   if(!on && ACTIVE_TAB==='teacher'){ document.querySelector('[data-tab="dashboard"]').click(); return; }
   document.getElementById('loginBox').classList.toggle('hidden', on);
   document.getElementById('adminPanel').classList.toggle('hidden', !on);
@@ -747,6 +754,25 @@ async function doLogin(){
   }catch(e){ const t = String(e&&e.name)==='AbortError' ? 'เครือข่ายหมดเวลา (20 วินาที) กรุณาลองใหม่' : e.message; msg.innerHTML='<span class="text-red-600">❌ '+esc(t)+'</span>'; }
 }
 function doLogout(){ ADMIN=null; TEACHERS=[]; sessionStorage.removeItem('Workpiece Storage_admin'); document.getElementById('adUser').value='';document.getElementById('adPass').value=''; refillSubjects(); refreshAdminUI(); }
+// ---------- Admin สลับบทบาทเป็นครู (ตรวจ/ให้คะแนน/แก้ไขในขอบเขตวิชาครูคนนั้น แล้วสลับกลับได้) ----------
+// ใช้ USER/PASS จริงของครู (admin โหลดมาได้) backend จึงเห็นเป็นครูคนนั้นแท้ๆ ทั้งสิทธิ์และชื่อผู้ตรวจ
+function switchToTeacher(row){
+  if(!isAdmin() || (ADMIN && ADMIN.switchedByAdmin)) return alert('🔒 เฉพาะ Admin ที่ยังไม่สลับบทบาทเท่านั้น');
+  const t = TEACHERS.find(x=>x.row===row); if(!t) return;
+  if(!t.pass) return alert('❌ บัญชีนี้ไม่มีรหัสผ่าน ให้แก้ไขใส่รหัสก่อนสลับบทบาท');
+  if(!confirm(`สลับบทบาทเป็นครู "${t.name}" ?\nตรวจ/ให้คะแนนได้เฉพาะวิชา: ${(t.subjects||[]).join(', ')||'—'}\n(ปุ่มลบยังเป็นของ Admin — สลับกลับได้ตลอด)`)) return;
+  const au = ADMIN.user, ap = ADMIN.pass;
+  ADMIN = {user:t.user, pass:t.pass, role:'teacher', name:t.name, subjects:t.subjects||[], switchedByAdmin:true, adminUser:au, adminPass:ap};
+  sessionStorage.setItem('Workpiece Storage_admin', JSON.stringify(ADMIN));
+  refillSubjects(); refreshAdminUI();
+  document.querySelector('[data-tab="teacher"]').click();
+}
+function switchBackToAdmin(){
+  if(!ADMIN || !ADMIN.switchedByAdmin || !ADMIN.adminUser) return;
+  ADMIN = {user:ADMIN.adminUser, pass:ADMIN.adminPass, role:'admin', name:ADMIN.adminUser, subjects:[]};
+  sessionStorage.setItem('Workpiece Storage_admin', JSON.stringify(ADMIN));
+  refillSubjects(); refreshAdminUI();
+}
 function isAuthError(m){ return /ต้องล็อกอิน|USER หรือ PASS|บัญชีครูไม่ถูกต้อง|เฉพาะ Admin/.test(String(m||'')); }
 function forceLogout(msg){
   ADMIN=null; TEACHERS=[];
@@ -815,7 +841,7 @@ function renderTeachers(){
   const cnt = document.getElementById('teacherCount'); if(cnt) cnt.textContent = `(${TEACHERS.length} บัญชี)`;
   fillTeacherClassFilter('newTeacherClass');
   renderSubjectPick('newTeacherSubjects', NEW_T_SEL, null, document.getElementById('newTeacherClass')?.value || ''); // กล่องเพิ่มใหม่: ติ๊กได้เฉพาะวิชาที่ยังว่าง
-  box.innerHTML = TEACHERS.map(t=>`<div class="border rounded-xl px-3 py-1.5 text-sm"><div class="flex justify-between items-center gap-2"><span>👩‍🏫 ${esc(t.name)} <span class="text-slate-400">@${esc(t.user)}</span></span><span class="flex gap-2"><button onclick="editTeacherUI(${t.row})" class="text-blue-600 text-xs">✏️ แก้ไข</button><button onclick="delTeacher(${t.row})" class="text-red-500 text-xs">ลบ</button></span></div><div class="flex gap-1 flex-wrap mt-1">${(t.subjects||[]).map(s=>`<span class="badge bg-emerald-100 text-emerald-700">${esc(s)}</span>`).join('') || '<span class="badge bg-red-100 text-red-700">ยังไม่กำหนดวิชา</span>'}</div><div id="teacher-edit-${t.row}" class="mt-1"></div></div>`).join('') || '<p class="text-xs text-slate-400">ยังไม่มีบัญชีครู — เพิ่มด้านบนได้เลย (รัน setupSheet() ใน Apps Script ก่อน 1 ครั้งถ้าเพิ่งอัปเกรด)</p>';
+  box.innerHTML = TEACHERS.map(t=>`<div class="border rounded-xl px-3 py-1.5 text-sm"><div class="flex justify-between items-center gap-2"><span>👩‍🏫 ${esc(t.name)} <span class="text-slate-400">@${esc(t.user)}</span></span><span class="flex gap-2"><button onclick="switchToTeacher(${t.row})" class="text-purple-600 text-xs">🔀 สลับบทบาท</button><button onclick="editTeacherUI(${t.row})" class="text-blue-600 text-xs">✏️ แก้ไข</button><button onclick="delTeacher(${t.row})" class="text-red-500 text-xs">ลบ</button></span></div><div class="flex gap-1 flex-wrap mt-1">${(t.subjects||[]).map(s=>`<span class="badge bg-emerald-100 text-emerald-700">${esc(s)}</span>`).join('') || '<span class="badge bg-red-100 text-red-700">ยังไม่กำหนดวิชา</span>'}</div><div id="teacher-edit-${t.row}" class="mt-1"></div></div>`).join('') || '<p class="text-xs text-slate-400">ยังไม่มีบัญชีครู — เพิ่มด้านบนได้เลย (รัน setupSheet() ใน Apps Script ก่อน 1 ครั้งถ้าเพิ่งอัปเกรด)</p>';
 }
 // ---------- สุ่มรหัส + เลือกวิชาแบบติ๊ก (กันซ้ำ) ----------
 // รหัสอ่านง่าย 8 ตัว ตัดตัวที่สับสนออก (0/O, 1/l/I)
