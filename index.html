@@ -300,7 +300,10 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
         </div>
         <input id="newTeacherName" placeholder="ชื่อครู (เช่น ครูสมใจ)" class="border rounded-xl px-3 py-2 text-sm">
       </div>
-      <p class="text-xs font-semibold mb-1">วิชาที่สอน <span class="font-normal text-slate-400">(ติ๊กจากรายวิชาที่มี — วิชาที่มีครูแล้วติ๊กไม่ได้)</span></p>
+      <p class="text-xs font-semibold mb-1">วิชาที่สอน <span class="font-normal text-slate-400">(เลือกชั้นเพื่อกรอง แล้วติ๊กวิชา — วิชาที่มีครูแล้วติ๊กไม่ได้)</span></p>
+      <div class="flex gap-2 mb-2 items-center flex-wrap">
+        <select id="newTeacherClass" onchange="newTeacherClassChange()" class="border rounded-xl px-3 py-2 text-sm bg-white"><option value="">ทุกชั้น (แสดงทุกวิชา)</option></select>
+      </div>
       <div id="newTeacherSubjects" class="flex gap-1.5 flex-wrap mb-3"></div>
       <button onclick="addTeacher()" class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm mb-1">+ เพิ่มบัญชีครู</button>
       <div id="teacherAdminList" class="space-y-1 max-h-64 overflow-auto"></div>
@@ -529,7 +532,7 @@ function refreshAdminUI(){
   document.getElementById('adminBtn').textContent = on ? ('✅ ' + (ADMIN.name || ADMIN.user) + (isTeacher() ? ' (ครู)' : '')) : '🔐 Admin';
   const lock = document.getElementById('chkLock');
   if(lock){
-    if(!on) { lock.style.display = ''; lock.innerHTML = '🔒 หน้าตรวจงานสำหรับครู/Admin — <button onclick="goAdmin()" class="underline font-semibold">เข้าสู่ระบบ</button> เพื่อกดผ่าน/แก้ไข/ลบงานได้'; }
+    if(!on) { lock.style.display = ''; lock.className = 'bg-slate-900 text-white rounded-2xl p-4 mb-4 text-sm'; lock.innerHTML = '🔒 หน้าตรวจงานสำหรับครู/Admin — <button onclick="goAdmin()" class="underline font-semibold">เข้าสู่ระบบ</button> เพื่อกดผ่าน/แก้ไข/ลบงานได้'; }
     else if(isTeacher()) { lock.style.display = ''; lock.className = 'bg-blue-900 text-white rounded-2xl p-4 mb-4 text-sm'; lock.innerHTML = '👩‍🏫 ล็อกอินครู <b>' + esc(ADMIN.name || ADMIN.user) + '</b> — ตรวจได้เฉพาะวิชา: <b>' + esc(teacherSubjects().join(', ') || '—') + '</b> (ปุ่มลบ/จัดการระบบเป็นของ Admin เท่านั้น)'; }
     else { lock.style.display = 'none'; }
   }
@@ -717,7 +720,8 @@ async function loadTeachers(){
 function renderTeachers(){
   const box = document.getElementById('teacherAdminList'); if(!box) return;
   const cnt = document.getElementById('teacherCount'); if(cnt) cnt.textContent = `(${TEACHERS.length} บัญชี)`;
-  renderSubjectPick('newTeacherSubjects', [], null); // กล่องเพิ่มใหม่: ติ๊กได้เฉพาะวิชาที่ยังว่าง
+  fillTeacherClassFilter('newTeacherClass');
+  renderSubjectPick('newTeacherSubjects', NEW_T_SEL, null, document.getElementById('newTeacherClass')?.value || ''); // กล่องเพิ่มใหม่: ติ๊กได้เฉพาะวิชาที่ยังว่าง
   box.innerHTML = TEACHERS.map(t=>`<div class="border rounded-xl px-3 py-1.5 text-sm"><div class="flex justify-between items-center gap-2"><span>👩‍🏫 ${esc(t.name)} <span class="text-slate-400">@${esc(t.user)}</span></span><span class="flex gap-2"><button onclick="editTeacherUI(${t.row})" class="text-blue-600 text-xs">✏️ แก้ไข</button><button onclick="delTeacher(${t.row})" class="text-red-500 text-xs">ลบ</button></span></div><div class="flex gap-1 flex-wrap mt-1">${(t.subjects||[]).map(s=>`<span class="badge bg-emerald-100 text-emerald-700">${esc(s)}</span>`).join('') || '<span class="badge bg-red-100 text-red-700">ยังไม่กำหนดวิชา</span>'}</div><div id="teacher-edit-${t.row}" class="mt-1"></div></div>`).join('') || '<p class="text-xs text-slate-400">ยังไม่มีบัญชีครู — เพิ่มด้านบนได้เลย (รัน setupSheet() ใน Apps Script ก่อน 1 ครั้งถ้าเพิ่งอัปเกรด)</p>';
 }
 // ---------- สุ่มรหัส + เลือกวิชาแบบติ๊ก (กันซ้ำ) ----------
@@ -742,30 +746,58 @@ function teacherTakenMap(excludeRow){
   });
   return map;
 }
-// วาด checkbox วิชาจาก SUBJECTS (ข้อมูลจริงที่มี) — วิชาที่มีครูอื่นแล้ว disabled กันเลือกซ้ำ
-function renderSubjectPick(boxId, selected, excludeRow){
+// ที่เลือกวิชาค้างไว้ของแต่ละฟอร์ม (เปลี่ยนตัวกรองชั้นแล้วไม่หาย)
+let NEW_T_SEL = new Set();
+let EDIT_T_SEL = {};
+// วาด checkbox วิชา: รายวิชาจริงกรองตามชั้นที่เลือก + วิชาที่มีครูอื่นแล้ว disabled กันเลือกซ้ำ
+// วิชาที่เลือกไว้แล้วจะยังแสดงอยู่แม้ตัวกรองชั้นซ่อนมัน
+function renderSubjectPick(boxId, set, excludeRow, classFilter){
   const box = document.getElementById(boxId); if(!box) return;
   const taken = teacherTakenMap(excludeRow);
-  const sel = selected || [];
-  box.innerHTML = SUBJECTS.map(s=>{
+  set.forEach(s=>{ if(taken[s]) set.delete(s); }); // วิชาที่เพิ่งมีครูอื่นแล้ว หลุดจากที่เลือกอัตโนมัติ
+  let list = classFilter ? subjectsForClass(classFilter) : [...SUBJECTS];
+  const extra = [...set].filter(s=>!list.includes(s));
+  list = list.concat(extra);
+  box.innerHTML = list.map(s=>{
     const hold = taken[s];
     if(hold) return `<label class="badge bg-slate-100 text-slate-400 cursor-not-allowed" title="มีครูใช้แล้ว: ${esc(hold.name)} (@${esc(hold.user)})">🔒 ${esc(s)}</label>`;
-    const on = sel.includes(s) ? 'checked' : '';
+    const on = set.has(s) ? 'checked' : '';
     return `<label class="badge bg-white border border-slate-300 text-slate-700 cursor-pointer hover:border-blue-500 has-[:checked]:bg-blue-600 has-[:checked]:text-white has-[:checked]:border-blue-600"><input type="checkbox" value="${esc(s)}" ${on} class="mr-1 accent-blue-600">${esc(s)}</label>`;
-  }).join('') || '<span class="text-xs text-slate-400">ยังไม่มีรายวิชา — เพิ่มที่กล่อง “วิชา” ก่อน</span>';
+  }).join('') || '<span class="text-xs text-slate-400">ยังไม่มีรายวิชาสำหรับชั้นนี้ — เลือกชั้นอื่น หรือเพิ่มวิชาที่กล่อง “วิชา” ก่อน</span>';
 }
-function pickedSubjects(boxId){
-  return [...document.querySelectorAll('#'+boxId+' input[type="checkbox"]:checked')].map(el=>el.value);
+// อ่านติ๊กปัจจุบันเก็บเข้าชุด (เรียกก่อนเปลี่ยนตัวกรอง/บันทึก)
+function syncPickToSet(boxId, set){
+  document.querySelectorAll('#'+boxId+' input[type="checkbox"]:not(:disabled)').forEach(el=>{ if(el.checked) set.add(el.value); else set.delete(el.value); });
+}
+// เติม dropdown ชั้นจากห้องที่มีจริง (นักเรียน + งานที่ส่งแล้ว)
+function fillTeacherClassFilter(selectId){
+  const el = document.getElementById(selectId); if(!el) return;
+  const keep = el.value;
+  const rooms = classroomList();
+  el.innerHTML = '<option value="">ทุกชั้น (แสดงทุกวิชา)</option>' + rooms.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('');
+  if(rooms.includes(keep)) el.value = keep;
+}
+function newTeacherClassChange(){
+  syncPickToSet('newTeacherSubjects', NEW_T_SEL);
+  renderSubjectPick('newTeacherSubjects', NEW_T_SEL, null, document.getElementById('newTeacherClass')?.value || '');
+}
+function editTeacherClassChange(row){
+  if(!EDIT_T_SEL[row]) EDIT_T_SEL[row] = new Set();
+  syncPickToSet('t-subj-'+row, EDIT_T_SEL[row]);
+  renderSubjectPick('t-subj-'+row, EDIT_T_SEL[row], row, document.getElementById('t-class-'+row)?.value || '');
 }
 async function addTeacher(){
   if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น');
   const user=document.getElementById('newTeacherUser').value.trim(), pass=document.getElementById('newTeacherPass').value.trim();
-  const name=document.getElementById('newTeacherName').value.trim(), subjects=pickedSubjects('newTeacherSubjects');
+  const name=document.getElementById('newTeacherName').value.trim();
+  syncPickToSet('newTeacherSubjects', NEW_T_SEL);
+  const subjects=[...NEW_T_SEL];
   if(!user || !pass || !name) return alert('กรุณากรอก USER / PASS (กด 🎲 สุ่มได้) / ชื่อครู ให้ครบ');
-  if(!subjects.length) return alert('กรุณาติ๊กวิชาที่สอนอย่างน้อย 1 วิชา');
+  if(!subjects.length) return alert('กรุณาเลือกชั้นแล้วติ๊กวิชาที่สอนอย่างน้อย 1 วิชา');
   try{
     await adminPost({action:'addTeacher', user, pass, name, subjects});
     document.getElementById('newTeacherUser').value='';document.getElementById('newTeacherPass').value='';document.getElementById('newTeacherName').value='';
+    NEW_T_SEL = new Set();
     await loadTeachers(); alert('✅ เพิ่มบัญชีครู "'+name+'" แล้ว ('+subjects.join(', ')+')');
   }catch(e){ alert('❌ '+e.message); }
 }
@@ -773,16 +805,21 @@ function editTeacherUI(row){
   if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น');
   const t = TEACHERS.find(x=>x.row===row); if(!t) return;
   const box = document.getElementById('teacher-edit-'+row); if(!box) return;
-  box.innerHTML = `<div class="flex flex-col gap-1 w-full"><input id="t-user-${row}" value="${esc(t.user)}" placeholder="USER" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><div class="flex gap-1"><input id="t-pass-${row}" value="${esc(t.pass||'')}" placeholder="PASS" class="border border-blue-400 rounded-lg px-2 py-1 text-sm flex-1 min-w-0"><button type="button" onclick="randomEditPass(${row})" title="สุ่มรหัสใหม่" class="px-2 py-1 rounded-lg bg-slate-200 text-xs shrink-0">🎲</button></div><input id="t-name-${row}" value="${esc(t.name)}" placeholder="ชื่อครู" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><div id="t-subj-${row}" class="flex gap-1 flex-wrap"></div><div class="flex gap-1"><button onclick="saveTeacherEdit(${row})" class="px-2 py-1 rounded-lg bg-blue-600 text-white text-xs">บันทึก</button><button onclick="renderTeachers()" class="px-2 py-1 rounded-lg bg-slate-200 text-xs">ยกเลิก</button></div></div>`;
-  renderSubjectPick('t-subj-'+row, t.subjects||[], row);
+  box.innerHTML = `<div class="flex flex-col gap-1 w-full"><input id="t-user-${row}" value="${esc(t.user)}" placeholder="USER" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><div class="flex gap-1"><input id="t-pass-${row}" value="${esc(t.pass||'')}" placeholder="PASS" class="border border-blue-400 rounded-lg px-2 py-1 text-sm flex-1 min-w-0"><button type="button" onclick="randomEditPass(${row})" title="สุ่มรหัสใหม่" class="px-2 py-1 rounded-lg bg-slate-200 text-xs shrink-0">🎲</button></div><input id="t-name-${row}" value="${esc(t.name)}" placeholder="ชื่อครู" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><div class="flex gap-2 items-center flex-wrap"><select id="t-class-${row}" onchange="editTeacherClassChange(${row})" class="border border-blue-400 rounded-lg px-2 py-1 text-sm bg-white"><option value="">ทุกชั้น</option></select><span class="text-xs text-slate-400">เลือกชั้นเพื่อกรองวิชา</span></div><div id="t-subj-${row}" class="flex gap-1 flex-wrap"></div><div class="flex gap-1"><button onclick="saveTeacherEdit(${row})" class="px-2 py-1 rounded-lg bg-blue-600 text-white text-xs">บันทึก</button><button onclick="renderTeachers()" class="px-2 py-1 rounded-lg bg-slate-200 text-xs">ยกเลิก</button></div></div>`;
+  EDIT_T_SEL[row] = new Set(t.subjects || []);
+  fillTeacherClassFilter('t-class-'+row);
+  renderSubjectPick('t-subj-'+row, EDIT_T_SEL[row], row, '');
 }
 async function saveTeacherEdit(row){
   if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น');
   const user=(document.getElementById('t-user-'+row)?.value||'').trim(), pass=(document.getElementById('t-pass-'+row)?.value||'').trim();
-  const name=(document.getElementById('t-name-'+row)?.value||'').trim(), subjects=pickedSubjects('t-subj-'+row);
+  const name=(document.getElementById('t-name-'+row)?.value||'').trim();
+  if(!EDIT_T_SEL[row]) EDIT_T_SEL[row] = new Set();
+  syncPickToSet('t-subj-'+row, EDIT_T_SEL[row]);
+  const subjects=[...EDIT_T_SEL[row]];
   if(!user || !pass || !name) return alert('กรุณากรอก USER / PASS / ชื่อครู ให้ครบ');
-  if(!subjects.length) return alert('กรุณาติ๊กวิชาที่สอนอย่างน้อย 1 วิชา');
-  try{ await adminPost({action:'editTeacher', row, user, pass, name, subjects}); await loadTeachers(); alert('✅ บันทึกบัญชีครูแล้ว'); }
+  if(!subjects.length) return alert('กรุณาเลือกชั้นแล้วติ๊กวิชาที่สอนอย่างน้อย 1 วิชา');
+  try{ await adminPost({action:'editTeacher', row, user, pass, name, subjects}); delete EDIT_T_SEL[row]; await loadTeachers(); alert('✅ บันทึกบัญชีครูแล้ว'); }
   catch(e){ alert('❌ '+e.message); }
 }
 async function delTeacher(row){
