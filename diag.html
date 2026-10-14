@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ตรวจสุขภาพระบบ Workpiece Storage</title>
+<style>
+body{font-family:sans-serif;background:#f4f6fb;color:#1e293b;margin:0;padding:16px}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin-bottom:10px;font-size:14px}
+.ok{color:#047857;font-weight:bold}.bad{color:#b91c1c;font-weight:bold}.run{color:#92400e}
+pre{background:#0f172a;color:#a5f3fc;border-radius:8px;padding:10px;overflow:auto;font-size:12px;max-height:220px}
+button{background:#1d4ed8;color:#fff;border:0;border-radius:10px;padding:10px 18px;font-size:15px}
+small{color:#64748b}
+</style>
+</head>
+<body>
+<h2>🩺 ตรวจสุขภาพระบบ <small>(ไม่ต้องล็อกอิน)</small></h2>
+<p><button id="go" onclick="runDiag(this)">▶ เริ่มตรวจ</button> <span id="st"></span></p>
+<div id="out"></div>
+<script>
+var API = 'https://script.google.com/macros/s/AKfycbwrARhkyYB08WG3sVgLH5MPJ8Ts7RJTRAluIL9SUHebn_A1RseuTcN6Fi3DpOnRBOB6JQ/exec';
+function line(t, cls){ var d=document.createElement('div'); d.className='card'; d.innerHTML=t; document.getElementById('out').appendChild(d); return d; }
+function fetchTO(url, opts, ms){
+  var c = new AbortController();
+  var to = setTimeout(function(){ c.abort(); }, ms || 30000);
+  opts = opts || {}; opts.signal = c.signal;
+  return fetch(url, opts).then(function(r){ clearTimeout(to); return r.json(); },
+    function(e){ clearTimeout(to); throw e; });
+}
+async function runDiag(btn){
+  btn.disabled = true;
+  document.getElementById('out').innerHTML = '';
+  document.getElementById('st').textContent = 'กำลังตรวจ...';
+  // 1. เบราว์เซอร์ + session
+  try{
+    line('1) เบราว์เซอร์: <span class="ok">รองรับ JS</span><br><small>' + navigator.userAgent + '</small>');
+    sessionStorage.setItem('__probe', '1');
+    if(sessionStorage.getItem('__probe') !== '1') throw new Error('อ่านค่าคืนไม่ได้');
+    sessionStorage.removeItem('__probe');
+    line('2) หน่วยจำ session: <span class="ok">ปกติ</span>');
+  }catch(e){ line('2) หน่วยจำ session: <span class="bad">พัง — ' + e.message + '</span> (นี่อาจเป็นสาเหตุค้าง!)'); }
+  // 2. backend
+  var ping = null;
+  try{
+    var t0 = Date.now();
+    ping = await fetchTO(API + '?action=ping&t=' + Date.now(), {}, 20000);
+    line('3) เซิร์ฟเวอร์ตอบ: <span class="ok">ปกติ (' + (Date.now()-t0) + 'ms) version=' + ping.version + '</span>');
+  }catch(e){ line('3) เซิร์ฟเวอร์ตอบ: <span class="bad">ไม่สำเร็จ — ' + (e.name + ': ' + e.message) + '</span><br><small>เน็ตเวิร์กบล็อก script.google.com หรือเซิร์ฟเวอร์ล่ม</small>'); }
+  // 3. โหลดข้อมูลจริง
+  var init = null;
+  try{
+    var t1 = Date.now();
+    init = await fetchTO(API + '?action=init&t=' + Date.now(), {}, 60000);
+    if(!init || !init.ok || !Array.isArray(init.rows)) throw new Error('ข้อมูลตอบกลับผิดรูป: ' + JSON.stringify(init).slice(0,120));
+    line('4) โหลดข้อมูล: <span class="ok">ปกติ (' + (Date.now()-t1) + 'ms) งาน ' + init.rows.length + ' ชิ้น / วิชา ' + (init.subjects||[]).length + ' / นักเรียน ' + (init.students||[]).length + ' / version ' + init.version + (init.partial ? ' <span class="bad">(มาไม่ครบ!)</span>' : '') + '</span>');
+  }catch(e){ line('4) โหลดข้อมูล: <span class="bad">ไม่สำเร็จ — ' + (e.name + ': ' + e.message) + '</span>'); }
+  // 4. ทดสอบวาดผล 5 แถว
+  try{
+    if(!init || !init.rows.length) throw new Error('ไม่มีข้อมูลให้ทดสอบวาด');
+    var h = '<table border="1" cellpadding="4"><tr><th>ชื่อ</th><th>วิชา</th><th>ชื่องาน</th></tr>' +
+      init.rows.slice(0,5).map(function(r){ return '<tr><td>' + r.fullName + '</td><td>' + r.subject + '</td><td>' + r.title + '</td></tr>'; }).join('') + '</table>';
+    var d = line('5) ทดสอบวาดผล: <span class="ok">ปกติ</span>' + h);
+  }catch(e){ line('5) ทดสอบวาดผล: <span class="bad">พัง — ' + e.message + '</span>'); }
+  // 5. เวอร์ชันหน้า index.html ที่โฮสต์อยู่
+  try{
+    var html = await fetch('./index.html?t=' + Date.now()).then(function(r){ return r.text(); });
+    var m = /BACKEND_VERSION\s*=\s*'([^']+)'/.exec(html);
+    var fv = m ? m[1] : '(หาไม่เจอ)';
+    var bv = (ping && ping.version) || (init && init.version) || '?';
+    var same = fv === bv;
+    line('6) หน้าเว็บเป็นเวอร์ชัน <b>' + fv + '</b> / เซิร์ฟเวอร์ <b>' + bv + '</b> — ' + (same ? '<span class="ok">ตรงกัน</span>' : '<span class="bad">ไม่ตรงกัน! อัปไฟล์ index.html ใหม่แล้วฮาร์ดรีเฟรช (Ctrl+Shift+R)</span>'));
+  }catch(e){ line('6) เช็คเวอร์ชันหน้าเว็บ: <span class="bad">' + e.message + '</span>'); }
+  document.getElementById('st').textContent = 'ตรวจเสร็จ — ถ่ายภาพหน้านี้ส่งมาได้เลย';
+  btn.disabled = false;
+}
+</script>
+</body>
+</html>
