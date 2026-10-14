@@ -17,7 +17,7 @@ let SUBJECTS = ['ภาษาไทย','คณิตศาสตร์','วิ
 let STUDENTS = [];
 let TERMS = []; // [{year, semester, termId, sheetName}] จาก backend
 let CURRENT_TERM = null; // {year, semester}
-const BACKEND_VERSION = 'term-5'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
+const BACKEND_VERSION = 'term-7'; // ต้องตรงกับ CONFIG.VERSION ใน Code.gs — ไม่ตรงจะมีแถบแดงเตือนว่า backend เก่า
 const CATEGORIES = [
   { name:'ใบงาน', icon:'📝', color:'from-amber-400 to-orange-500' },
   { name:'โครงงาน', icon:'🔬', color:'from-emerald-400 to-teal-600' },
@@ -291,15 +291,18 @@ input:focus,select:focus,textarea:focus{border-color:#2563eb!important;box-shado
     </div>
     <div id="teacherManageBox" class="bg-white rounded-2xl border p-4">
       <h3 class="font-semibold mb-1">👩‍🏫 บัญชีครู <span id="teacherCount" class="text-xs text-slate-400"></span></h3>
-      <p class="text-xs text-slate-400 mb-2">เฉพาะ Admin เพิ่ม/ลบได้ • ครูล็อกอินช่องเดิม ตรวจงานได้เฉพาะวิชาที่กำหนด (ลบ/จัดการระบบไม่ได้) • รหัสเก็บเป็นข้อความธรรมดาในชีต “ครู” อย่าใช้รหัสเดียวกับอีเมล</p>
-      <div class="grid md:grid-cols-4 gap-2 mb-3">
+      <p class="text-xs text-slate-400 mb-2">เฉพาะ Admin เพิ่ม/ลบได้ • ครูล็อกอินช่องเดิม ตรวจงานได้เฉพาะวิชาที่กำหนด (ลบ/จัดการระบบไม่ได้) • <b>1 วิชา = 1 ครูเท่านั้น</b> วิชาที่มีครูแล้วจะติ๊กไม่ได้ • รหัสเก็บเป็นข้อความธรรมดาในชีต “ครู” อย่าใช้รหัสเดียวกับอีเมล</p>
+      <div class="grid md:grid-cols-3 gap-2 mb-2">
         <input id="newTeacherUser" placeholder="USER (เช่น kru.math)" class="border rounded-xl px-3 py-2 text-sm">
-        <input id="newTeacherPass" placeholder="PASS" class="border rounded-xl px-3 py-2 text-sm">
+        <div class="flex gap-1">
+          <input id="newTeacherPass" placeholder="PASS (กด 🎲 สุ่มได้)" class="flex-1 min-w-0 border rounded-xl px-3 py-2 text-sm">
+          <button type="button" onclick="randomNewPass()" title="สุ่มรหัสอัตโนมัติ" class="px-3 py-2 rounded-xl bg-slate-200 text-sm shrink-0">🎲</button>
+        </div>
         <input id="newTeacherName" placeholder="ชื่อครู (เช่น ครูสมใจ)" class="border rounded-xl px-3 py-2 text-sm">
-        <input id="newTeacherSubjects" list="subjectList2" placeholder="วิชาที่สอน comma คั่น" class="border rounded-xl px-3 py-2 text-sm">
-        <datalist id="subjectList2"></datalist>
-        <button onclick="addTeacher()" class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm md:col-span-4">+ เพิ่มบัญชีครู</button>
       </div>
+      <p class="text-xs font-semibold mb-1">วิชาที่สอน <span class="font-normal text-slate-400">(ติ๊กจากรายวิชาที่มี — วิชาที่มีครูแล้วติ๊กไม่ได้)</span></p>
+      <div id="newTeacherSubjects" class="flex gap-1.5 flex-wrap mb-3"></div>
+      <button onclick="addTeacher()" class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm mb-1">+ เพิ่มบัญชีครู</button>
       <div id="teacherAdminList" class="space-y-1 max-h-64 overflow-auto"></div>
     </div>
     <div id="teacherInfoBox" class="hidden bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm">
@@ -714,33 +717,71 @@ async function loadTeachers(){
 function renderTeachers(){
   const box = document.getElementById('teacherAdminList'); if(!box) return;
   const cnt = document.getElementById('teacherCount'); if(cnt) cnt.textContent = `(${TEACHERS.length} บัญชี)`;
-  const dl = document.getElementById('subjectList2');
-  if(dl) dl.innerHTML = SUBJECTS.map(s=>`<option value="${esc(s)}">`).join('');
+  renderSubjectPick('newTeacherSubjects', [], null); // กล่องเพิ่มใหม่: ติ๊กได้เฉพาะวิชาที่ยังว่าง
   box.innerHTML = TEACHERS.map(t=>`<div class="border rounded-xl px-3 py-1.5 text-sm"><div class="flex justify-between items-center gap-2"><span>👩‍🏫 ${esc(t.name)} <span class="text-slate-400">@${esc(t.user)}</span></span><span class="flex gap-2"><button onclick="editTeacherUI(${t.row})" class="text-blue-600 text-xs">✏️ แก้ไข</button><button onclick="delTeacher(${t.row})" class="text-red-500 text-xs">ลบ</button></span></div><div class="flex gap-1 flex-wrap mt-1">${(t.subjects||[]).map(s=>`<span class="badge bg-emerald-100 text-emerald-700">${esc(s)}</span>`).join('') || '<span class="badge bg-red-100 text-red-700">ยังไม่กำหนดวิชา</span>'}</div><div id="teacher-edit-${t.row}" class="mt-1"></div></div>`).join('') || '<p class="text-xs text-slate-400">ยังไม่มีบัญชีครู — เพิ่มด้านบนได้เลย (รัน setupSheet() ใน Apps Script ก่อน 1 ครั้งถ้าเพิ่งอัปเกรด)</p>';
+}
+// ---------- สุ่มรหัส + เลือกวิชาแบบติ๊ก (กันซ้ำ) ----------
+// รหัสอ่านง่าย 8 ตัว ตัดตัวที่สับสนออก (0/O, 1/l/I)
+function randomPass(n){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let out='';
+  try{
+    const buf=new Uint32Array(n||8); crypto.getRandomValues(buf);
+    for(let i=0;i<buf.length;i++) out+=chars[buf[i]%chars.length];
+  }catch(e){ for(let i=0;i<(n||8);i++) out+=chars[Math.floor(Math.random()*chars.length)]; }
+  return out;
+}
+function randomNewPass(){ document.getElementById('newTeacherPass').value = randomPass(8); }
+function randomEditPass(row){ const el=document.getElementById('t-pass-'+row); if(el) el.value = randomPass(8); }
+// แผนที่วิชาที่มีครูแล้ว: {วิชา: {user, name}} — ข้ามแถว excludeRow (ไว้ตอนแก้ไขบัญชีตัวเอง)
+function teacherTakenMap(excludeRow){
+  const map = Object.create(null);
+  TEACHERS.forEach(t=>{
+    if(Number(t.row)===Number(excludeRow)) return;
+    (t.subjects||[]).forEach(s=>{ if(!map[s]) map[s] = {user:t.user, name:t.name}; });
+  });
+  return map;
+}
+// วาด checkbox วิชาจาก SUBJECTS (ข้อมูลจริงที่มี) — วิชาที่มีครูอื่นแล้ว disabled กันเลือกซ้ำ
+function renderSubjectPick(boxId, selected, excludeRow){
+  const box = document.getElementById(boxId); if(!box) return;
+  const taken = teacherTakenMap(excludeRow);
+  const sel = selected || [];
+  box.innerHTML = SUBJECTS.map(s=>{
+    const hold = taken[s];
+    if(hold) return `<label class="badge bg-slate-100 text-slate-400 cursor-not-allowed" title="มีครูใช้แล้ว: ${esc(hold.name)} (@${esc(hold.user)})">🔒 ${esc(s)}</label>`;
+    const on = sel.includes(s) ? 'checked' : '';
+    return `<label class="badge bg-white border border-slate-300 text-slate-700 cursor-pointer hover:border-blue-500 has-[:checked]:bg-blue-600 has-[:checked]:text-white has-[:checked]:border-blue-600"><input type="checkbox" value="${esc(s)}" ${on} class="mr-1 accent-blue-600">${esc(s)}</label>`;
+  }).join('') || '<span class="text-xs text-slate-400">ยังไม่มีรายวิชา — เพิ่มที่กล่อง “วิชา” ก่อน</span>';
+}
+function pickedSubjects(boxId){
+  return [...document.querySelectorAll('#'+boxId+' input[type="checkbox"]:checked')].map(el=>el.value);
 }
 async function addTeacher(){
   if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น');
   const user=document.getElementById('newTeacherUser').value.trim(), pass=document.getElementById('newTeacherPass').value.trim();
-  const name=document.getElementById('newTeacherName').value.trim(), subjects=document.getElementById('newTeacherSubjects').value.trim();
-  if(!user || !pass || !name) return alert('กรุณากรอก USER / PASS / ชื่อครู ให้ครบ');
-  if(!subjects) return alert('กรุณาระบุวิชาที่สอนอย่างน้อย 1 วิชา (comma คั่น)');
+  const name=document.getElementById('newTeacherName').value.trim(), subjects=pickedSubjects('newTeacherSubjects');
+  if(!user || !pass || !name) return alert('กรุณากรอก USER / PASS (กด 🎲 สุ่มได้) / ชื่อครู ให้ครบ');
+  if(!subjects.length) return alert('กรุณาติ๊กวิชาที่สอนอย่างน้อย 1 วิชา');
   try{
     await adminPost({action:'addTeacher', user, pass, name, subjects});
-    document.getElementById('newTeacherUser').value='';document.getElementById('newTeacherPass').value='';document.getElementById('newTeacherName').value='';document.getElementById('newTeacherSubjects').value='';
-    await loadTeachers(); alert('✅ เพิ่มบัญชีครู "'+name+'" แล้ว');
+    document.getElementById('newTeacherUser').value='';document.getElementById('newTeacherPass').value='';document.getElementById('newTeacherName').value='';
+    await loadTeachers(); alert('✅ เพิ่มบัญชีครู "'+name+'" แล้ว ('+subjects.join(', ')+')');
   }catch(e){ alert('❌ '+e.message); }
 }
 function editTeacherUI(row){
   if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น');
   const t = TEACHERS.find(x=>x.row===row); if(!t) return;
   const box = document.getElementById('teacher-edit-'+row); if(!box) return;
-  box.innerHTML = `<div class="flex flex-col gap-1 w-full"><input id="t-user-${row}" value="${esc(t.user)}" placeholder="USER" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><input id="t-pass-${row}" value="${esc(t.pass||'')}" placeholder="PASS (รหัสใหม่)" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><input id="t-name-${row}" value="${esc(t.name)}" placeholder="ชื่อครู" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><input id="t-subj-${row}" value="${esc((t.subjects||[]).join(', '))}" list="subjectList2" placeholder="วิชาที่สอน comma คั่น" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><div class="flex gap-1"><button onclick="saveTeacherEdit(${row})" class="px-2 py-1 rounded-lg bg-blue-600 text-white text-xs">บันทึก</button><button onclick="renderTeachers()" class="px-2 py-1 rounded-lg bg-slate-200 text-xs">ยกเลิก</button></div></div>`;
+  box.innerHTML = `<div class="flex flex-col gap-1 w-full"><input id="t-user-${row}" value="${esc(t.user)}" placeholder="USER" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><div class="flex gap-1"><input id="t-pass-${row}" value="${esc(t.pass||'')}" placeholder="PASS" class="border border-blue-400 rounded-lg px-2 py-1 text-sm flex-1 min-w-0"><button type="button" onclick="randomEditPass(${row})" title="สุ่มรหัสใหม่" class="px-2 py-1 rounded-lg bg-slate-200 text-xs shrink-0">🎲</button></div><input id="t-name-${row}" value="${esc(t.name)}" placeholder="ชื่อครู" class="border border-blue-400 rounded-lg px-2 py-1 text-sm"><div id="t-subj-${row}" class="flex gap-1 flex-wrap"></div><div class="flex gap-1"><button onclick="saveTeacherEdit(${row})" class="px-2 py-1 rounded-lg bg-blue-600 text-white text-xs">บันทึก</button><button onclick="renderTeachers()" class="px-2 py-1 rounded-lg bg-slate-200 text-xs">ยกเลิก</button></div></div>`;
+  renderSubjectPick('t-subj-'+row, t.subjects||[], row);
 }
 async function saveTeacherEdit(row){
   if(!isAdmin()) return alert('🔒 เฉพาะ Admin เท่านั้น');
   const user=(document.getElementById('t-user-'+row)?.value||'').trim(), pass=(document.getElementById('t-pass-'+row)?.value||'').trim();
-  const name=(document.getElementById('t-name-'+row)?.value||'').trim(), subjects=(document.getElementById('t-subj-'+row)?.value||'').trim();
+  const name=(document.getElementById('t-name-'+row)?.value||'').trim(), subjects=pickedSubjects('t-subj-'+row);
   if(!user || !pass || !name) return alert('กรุณากรอก USER / PASS / ชื่อครู ให้ครบ');
+  if(!subjects.length) return alert('กรุณาติ๊กวิชาที่สอนอย่างน้อย 1 วิชา');
   try{ await adminPost({action:'editTeacher', row, user, pass, name, subjects}); await loadTeachers(); alert('✅ บันทึกบัญชีครูแล้ว'); }
   catch(e){ alert('❌ '+e.message); }
 }
@@ -923,11 +964,17 @@ function compressImage(file, maxDim, quality){
     img.src = url;
   });
 }
+// กันส่งงานซ้ำตอนหลายคนใช้พร้อมกัน: ฟอร์มใหม่ได้รหัสใหม่ กด "ส่งอีกครั้ง" ใช้รหัสเดิม backend จะคืนผลเดิมไม่สร้างซ้ำ
+let PENDING_SUBMIT=null;
+function newSubmitId(){ try{ if(window.crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){} return 's'+Date.now().toString(36)+Math.random().toString(36).slice(2,10); }
 document.getElementById('submitForm').onsubmit = async (e)=>{
   e.preventDefault();
   const btn=document.getElementById('submitBtn'), msg=document.getElementById('submitMsg');
+  let payload, isRetry=false;
+  if(PENDING_SUBMIT){ payload=PENDING_SUBMIT; isRetry=true; }
+  else{
   const fd=new FormData(e.target);
-  const payload={ action:'submit', academicYear:document.getElementById('fYear').value, semester:document.getElementById('fTerm').value, fullName:String(fd.get('fullName')||'').trim(), classroom:String(fd.get('classroom')||'').trim(), subject:fd.get('subject'), category:fd.get('category'), title:String(fd.get('title')||'').trim(), description:String(fd.get('description')||'').trim(), fileKind };
+  payload={ action:'submit', submitId:newSubmitId(), academicYear:document.getElementById('fYear').value, semester:document.getElementById('fTerm').value, fullName:String(fd.get('fullName')||'').trim(), classroom:String(fd.get('classroom')||'').trim(), subject:fd.get('subject'), category:fd.get('category'), title:String(fd.get('title')||'').trim(), description:String(fd.get('description')||'').trim(), fileKind };
   payload.members = MEMBERS.length ? MEMBERS.slice() : [{fullName:payload.fullName, classroom:payload.classroom}];
   if(!payload.academicYear || !/^\d{4}$/.test(payload.academicYear) || (payload.semester!=='1' && payload.semester!=='2')){msg.innerHTML='<p class="text-red-600 text-sm">⚠️ กรุณาเลือก ปีการศึกษา / ภาคเรียน ให้ถูกต้อง</p>';return;}
   const members = payload.members.filter(m=>m.fullName && m.classroom);
@@ -940,9 +987,13 @@ document.getElementById('submitForm').onsubmit = async (e)=>{
   if(isTeacher() && !canGradeSubject(payload.subject)){msg.innerHTML=`<p class="text-red-600 text-sm">🔒 บัญชีครูของคุณส่งได้เฉพาะวิชา: ${esc(teacherSubjects().join(', ')||'—')}</p>`;return;}
   payload.members = members;
   Object.assign(payload, adminAuth()); // แนบสิทธิ์ไปด้วย: backend จะบังคับวิชาครูอีกชั้น (นักเรียนไม่ล็อกอินส่งได้ทุกวิชาเหมือนเดิม)
-  btn.disabled=true; btn.textContent='⏳ กำลังส่ง...'; msg.innerHTML='';
+  PENDING_SUBMIT=payload;
+  }
+  btn.disabled=true; btn.textContent=isRetry?'🔁 กำลังส่งอีกครั้ง...':'⏳ กำลังส่ง...'; msg.innerHTML='';
   try{
-    if(fileKind==='link'){
+    if(isRetry){
+      btn.textContent='🔁 กำลังส่งอีกครั้ง (ใช้รหัสกันซ้ำเดิม)...';
+    }else if(fileKind==='link'){
       payload.linkUrl=document.getElementById('fLink').value.trim();
       if(!payload.linkUrl) throw new Error('กรุณาวางลิงก์');
     }else{
@@ -962,8 +1013,14 @@ document.getElementById('submitForm').onsubmit = async (e)=>{
     }
     const res=await fetchJSON(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify(payload)}, 120000);
     const j=res;
+    if(!j.ok && j.busy){ // คิวเต็มเพราะมีคนส่งพร้อมกัน — กดซ้ำได้ งานไม่ซ้ำเพราะ submitId เดิม
+      msg.innerHTML='<p class="text-amber-700 text-sm">⏳ มีคนส่งพร้อมกันเยอะ ระบบให้คิวไม่ทัน — กดปุ่มส่งอีกครั้งได้เลย งานจะไม่ซ้ำ</p>';
+      btn.disabled=false; btn.textContent='🔁 ส่งอีกครั้ง (กันงานซ้ำ)';
+      return;
+    }
     if(!j.ok) throw new Error(j.error);
-    msg.innerHTML=`<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">✅ ส่งสำเร็จ! ปี ${esc(j.academicYear)} เทอม ${esc(j.semester)} → ชีต ${esc(j.sheetName||'')}${(j.rows||1)>1?` • งานกลุ่ม ${j.rows} คน`:''} <a href="${safeUrl(j.fileUrl)}" target="_blank" rel="noopener" class="underline">เปิดไฟล์</a></div>`;
+    PENDING_SUBMIT=null;
+    msg.innerHTML=`<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">✅ ส่งสำเร็จ! ปี ${esc(j.academicYear)} เทอม ${esc(j.semester)} → ชีต ${esc(j.sheetName||'')}${(j.rows||1)>1?` • งานกลุ่ม ${j.rows} คน`:''}${j.duplicate?' (ระบบกันงานซ้ำให้ — นี่คืองานเดิมที่ส่งสำเร็จแล้ว)':''} <a href="${safeUrl(j.fileUrl)}" target="_blank" rel="noopener" class="underline">เปิดไฟล์</a></div>`;
     const keepYear = payload.academicYear, keepTerm = payload.semester;
     e.target.reset();
     document.getElementById('fYear').value = keepYear; document.getElementById('fTerm').value = keepTerm;
@@ -973,12 +1030,18 @@ document.getElementById('submitForm').onsubmit = async (e)=>{
     softRefresh(); // ไม่ล้างจอทั้งหน้า
   }catch(err){
     const isTimeout = String(err && err.name) === 'AbortError';
-    msg.innerHTML = isTimeout
-      ? '<p class="text-red-600 text-sm">❌ หมดเวลารอ (เกิน 120 วินาที) — ไฟล์อาจอัปโหลดสำเร็จแล้วก็ได้ กรุณาเช็คหน้า Padlet ก่อนกดส่งซ้ำ ถ้าไม่มีค่อยลองใหม่ด้วยรูปที่เล็กลง/เน็ตแรงขึ้น</p>'
-      : `<p class="text-red-600 text-sm">❌ ${esc(err.message)}</p>`;
+    if(isTimeout){ // หมดเวลาแต่รหัสเดิมยังอยู่ กดส่งอีกครั้งได้โดยไม่ซ้ำ
+      msg.innerHTML='<p class="text-red-600 text-sm">❌ หมดเวลารอ (เกิน 120 วินาที) — ไฟล์อาจเข้าแล้วก็ได้ เช็คหน้า Padlet ก่อน ถ้าไม่มีค่อยกดปุ่มส่งอีกครั้ง (ระบบกันงานซ้ำให้)</p>';
+      btn.disabled=false; btn.textContent='🔁 ส่งอีกครั้ง (กันงานซ้ำ)';
+      return;
+    }
+    PENDING_SUBMIT=null;
+    msg.innerHTML=`<p class="text-red-600 text-sm">❌ ${esc(err.message||err)}</p>`;
   }
   btn.disabled=false; btn.textContent='🚀 ส่งงานเลย';
 };
+// แก้ฟอร์มหลังค้าง/timeout = เริ่มส่งใหม่ด้วยรหัสกันซ้ำอันใหม่ (กันกดซ้ำแล้วได้ของเก่า)
+document.getElementById('submitForm').addEventListener('input', ()=>{ if(PENDING_SUBMIT){ PENDING_SUBMIT=null; document.getElementById('submitBtn').textContent='🚀 ส่งงานเลย'; } });
 
 // ===== SUMMARY =====
 function sumFiltered(){
@@ -1053,12 +1116,12 @@ async function setStatus(sheetName,row,status,btn){
   const cmt=(document.getElementById('cmt-'+sheetName+'-'+row)?.value||'');
   const ref = ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row));
   try{
-    const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'updateStatus',row,status,comment:cmt,sheetName,...(ref?termKeys(ref):{}),...adminAuth()})});
-    const j=await res.json(); if(!j.ok) throw new Error(j.error);
+    const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'updateStatus',row,status,comment:cmt,sheetName,expectFullName:ref?ref.fullName:'',expectTitle:ref?ref.title:'',...(ref?termKeys(ref):{}),...adminAuth()})});
+    const j=await res.json(); if(!j.ok){ const e2=new Error(j.error); e2.stale=!!j.stale; throw e2; }
     const it=ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row)); if(it){it.status=status;it.comment=cmt;}
     renderCheck(); // อัปเดตเฉพาะหน้านี้ ไม่โหลดใหม่ทั้งระบบ
     if(ACTIVE_TAB==='dashboard') renderDash();
-  }catch(e){alert('บันทึกไม่สำเร็จ: '+e.message);}
+  }catch(e){ if(e.stale){ try{await softRefresh();}catch(_){} } alert((e.stale?'🔄 ':'')+'บันทึกไม่สำเร็จ: '+e.message); }
   if(btn){ btn.dataset.busy='0'; btn.disabled=false; }
 }
 async function delWork(sheetName,row){
@@ -1066,13 +1129,13 @@ async function delWork(sheetName,row){
   if(!confirm('ลบงานชิ้นนี้ (พร้อมไฟล์ใน Drive)? ['+sheetName+' แถว '+row+']')) return;
   const ref = ALL.find(r=>String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row));
   try{
-    const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'deleteWork',row,sheetName,...(ref?termKeys(ref):{}),...adminAuth()})});
-    const j=await res.json(); if(!j.ok) throw new Error(j.error);
+    const res=await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'deleteWork',row,sheetName,expectFullName:ref?ref.fullName:'',expectTitle:ref?ref.title:'',...(ref?termKeys(ref):{}),...adminAuth()})});
+    const j=await res.json(); if(!j.ok){ const e2=new Error(j.error); e2.stale=!!j.stale; throw e2; }
     // อัปเดต local ทันที + ชดเชยเลขแถวที่เลื่อนหลัง deleteRow (ข้อมูลตรง ไม่ต้องรอโหลด)
     ALL = ALL.filter(r=>!(String(r.sheetName)===String(sheetName) && Number(r.row)===Number(row)));
     ALL.forEach(r=>{ if(String(r.sheetName)===String(sheetName) && Number(r.row)>Number(row)) r.row = Number(r.row)-1; });
     renderActive();
-  }catch(e){alert('ลบไม่สำเร็จ: '+e.message);}
+  }catch(e){ if(e.stale){ try{await softRefresh();}catch(_){} } alert((e.stale?'🔄 ':'')+'ลบไม่สำเร็จ: '+e.message); }
 }
 
 // ตัวเลือกดูข้อมูลทุกหน้าเรียง [ชั้น → ชื่อ → วิชา]: เลือกชั้นแล้วชื่อ/วิชาเหลือเฉพาะห้องนั้น
